@@ -120,7 +120,7 @@ BASE_GENERIC_DOMAIN = ['yahoo.ca', 'yahoo.com', 'hotmail.com', 'gmail.com', 'out
 
 BASE_GENERIC_COMPANY_NAME_WORDS = ['construction', 'contracting', 'industriel', 'industriels', 'service',
                                    'services', 'inc', 'limited', 'ltd', 'ltee', 'ltée', 'co', 'industrial',
-                                   'solutions', 'llc', 'enterprises', 'systems', 'industries',
+                                   'solutions', 'llc', 'enterprises', 'enterprise', 'entreprise', 'entreprises', 'systems', 'industries',
                                    'technologies', 'company', 'corporation', 'installations', 'enr']
 
 LIST_SEPARATOR = ";"
@@ -460,6 +460,9 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                         # EXACT legacy ratio calculation
                         if cbx_row[CBX_COUNTRY] != hc_row[HC_COUNTRY]:
                             ratio_zip = ratio_address = 0.0
+                        elif not hc_address or not cbx_address:
+                            # If either address is empty, set ratio to 0
+                            ratio_zip = ratio_address = 0.0
                         else:
                             ratio_zip = fuzz.ratio(cbx_zip, hc_zip)
                             ratio_address = fuzz.token_sort_ratio(cbx_address, hc_address)
@@ -486,16 +489,28 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                         if ratio_previous > ratio_company:
                             ratio_company = ratio_previous
 
-                        # Fixed matching logic - corrected from legacy script bug
-                        # Match if: high company match (95%+) OR both thresholds met OR contact match with reasonable company match
-                        if ratio_company >= 95.0:
+                        # Matching logic - conditions are checked in priority order and are mutually exclusive
+                        if ratio_company == 100.0:
+                            # Perfect company name match - verify email domain if emails exist
+                            if hc_email and cbx_email:
+                                # Both have emails - domains must match
+                                if hc_domain == cbx_domain:
+                                    matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
+                                # If domains don't match, skip this record (no match)
+                            else:
+                                # At least one email is missing - match based on company name alone
+                                matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
+                        elif ratio_company >= min_company_ratio and ratio_address >= min_address_ratio:
+                            # Both company and address meet thresholds (PRIMARY MATCH)
+                            matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
+                        elif ratio_company >= 95.0:
                             # Very high company name similarity alone is sufficient
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
-                        elif ratio_company >= min_company_ratio and ratio_address >= min_address_ratio:
-                            # Both company and address meet thresholds
+                        elif contact_match and ratio_company >= 33.0:
+                            # Email domain/exact match with good company similarity
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
-                        elif contact_match and ratio_company >= 70.0:
-                            # Email domain match with reasonable company similarity (prevents false matches from generic domains)
+                        elif hc_email and cbx_email == hc_email and ratio_company >= 20.0:
+                            # Exact same email with minimal company similarity (20%) - likely same contact
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
 
             # Filter and sort matches (EXACT LEGACY)
@@ -515,8 +530,8 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                 matches = active_matches
 
             matches = sorted(matches, key=lambda x: (
-                x.get('modules', ''), x.get('hiring_client_count', 0),
-                x.get('ratio_address', 0), x.get('ratio_company', 0)
+                x.get('ratio_company', 0), x.get('ratio_address', 0),
+                x.get('hiring_client_count', 0), x.get('modules', '')
             ), reverse=True)
 
             # Build analysis string
