@@ -1,2 +1,8 @@
 backend/uploads/
 backend/outputs/
+frontend/node_modules/
+node_modules/
+*.log
+.DS_Store
+.vite/
+dist/
