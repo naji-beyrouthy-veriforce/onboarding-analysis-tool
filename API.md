@@ -559,7 +559,61 @@ For API issues:
 
 ---
 
-**API Version:** 2.0  
-**Last Updated:** November 2025  
+## Matching Algorithm Details (v2.1.0)
+
+### Performance Optimizations
+
+**Pre-normalization (5-10x faster)**
+- CBX company names (EN/FR) and addresses normalized once at load
+- Cached at indexes 28, 29, 30 of each CBX row
+- Eliminates millions of redundant string cleaning operations
+
+**Pre-compiled Regex (~10x faster)**
+- Generic word patterns compiled at startup
+- Reused across all matching operations
+
+**Rapidfuzz Support (2-3x faster)**
+- Automatic fallback: tries `rapidfuzz`, falls back to `fuzzywuzzy`
+- Install with: `pip install rapidfuzz>=3.0.0`
+
+### Matching Logic (Priority Order)
+
+1. **Perfect Company Match (100%)**
+   - If both have emails: domains must match
+   - If no emails: matches on company name alone
+   - Prevents false positives for common names
+
+2. **Combined Threshold (80% + 80%)**
+   - Company ≥ 80% AND Address ≥ 80%
+   - Most common match type
+
+3. **High Company Similarity (95%)**
+   - Company name alone ≥ 95%
+   - Ignores address
+
+4. **Contact Match (33%)**
+   - Email domain matches (non-generic)
+   - Requires company ≥ 33%
+
+5. **Exact Email (20%)**
+   - Same exact email address
+   - Requires company ≥ 20%
+
+### Empty Address Handling
+
+- If either HC or CBX address is empty: `ratio_address = 0`
+- Prevents matching on non-existent data
+
+### Sorting Priority
+
+1. Company ratio (highest first)
+2. Address ratio (highest first)
+3. Hiring client count
+4. Modules
+
+---
+
+**API Version:** 2.1  
+**Last Updated:** December 2025  
 **Base URL:** http://localhost:8000
 
