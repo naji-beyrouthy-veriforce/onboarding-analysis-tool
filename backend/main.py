@@ -634,6 +634,49 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                 for i, value in enumerate(row):
                     sheet.cell(idx + 2, i + 1, value)
 
+        # Format Excel sheets (like legacy script)
+        logger.info(f"[{job_id}] Formatting Excel sheets...")
+        update_job(job_id, progress=0.95, message="Formatting Excel sheets...")
+        
+        style = TableStyleInfo(name="TableStyleMedium2", showFirstColumn=False,
+                               showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+        
+        for sheet in sheets:
+            # Auto-size columns based on content
+            dims = {}
+            for row in sheet.rows:
+                for cell in row:
+                    if cell.value:
+                        dims[cell.column_letter] = max((dims.get(cell.column_letter, 0), len(str(cell.value))))
+            
+            for col, value in dims.items():
+                sheet.column_dimensions[col].width = value
+            
+            # Set specific columns to fixed width for long text fields
+            hc_header_length = len(hc_headers)
+            if sheet.max_row > 0:
+                try:
+                    # Find column indexes for specific headers
+                    summary_col = hc_header_length + analysis_headers.index("hc_contractor_summary") + 1
+                    analysis_col = hc_header_length + analysis_headers.index("analysis") + 1
+                    
+                    sheet.column_dimensions[get_column_letter(summary_col)].width = 150
+                    sheet.column_dimensions[get_column_letter(analysis_col)].width = 150
+                    
+                    # Apply text wrapping for better readability
+                    for i in range(2, sheet.max_row + 1):
+                        sheet.cell(i, summary_col).alignment = Alignment(wrapText=True)
+                        sheet.cell(i, analysis_col).alignment = Alignment(wrapText=True)
+                except (ValueError, IndexError):
+                    pass  # Skip if headers don't exist in this sheet
+            
+            # Add formatted table
+            if sheet.max_row > 0 and sheet.max_column > 0:
+                tab = Table(displayName=sheet.title.replace(" ", "_").replace("-", "_"),
+                            ref=f'A1:{get_column_letter(sheet.max_column)}{sheet.max_row}')
+                tab.tableStyleInfo = style
+                sheet.add_table(tab)
+        
         # Save output
         output_file = OUTPUT_DIR / f"{job_id}_results.xlsx"
         logger.info(f"[{job_id}] Saving to {output_file}...")
