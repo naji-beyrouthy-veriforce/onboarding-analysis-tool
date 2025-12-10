@@ -641,6 +641,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
         style = TableStyleInfo(name="TableStyleMedium2", showFirstColumn=False,
                                showLastColumn=False, showRowStripes=True, showColumnStripes=False)
         
+        table_counter = 1
         for sheet in sheets:
             # Auto-size columns based on content
             dims = {}
@@ -654,7 +655,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             
             # Set specific columns to fixed width for long text fields
             hc_header_length = len(hc_headers)
-            if sheet.max_row > 0:
+            if sheet.max_row > 1:  # Must have at least headers + 1 data row
                 try:
                     # Find column indexes for specific headers
                     summary_col = hc_header_length + analysis_headers.index("hc_contractor_summary") + 1
@@ -670,12 +671,19 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                 except (ValueError, IndexError):
                     pass  # Skip if headers don't exist in this sheet
             
-            # Add formatted table
-            if sheet.max_row > 0 and sheet.max_column > 0:
-                tab = Table(displayName=sheet.title.replace(" ", "_").replace("-", "_"),
-                            ref=f'A1:{get_column_letter(sheet.max_column)}{sheet.max_row}')
-                tab.tableStyleInfo = style
-                sheet.add_table(tab)
+            # Add formatted table only if there's actual data (not just headers)
+            if sheet.max_row > 1 and sheet.max_column > 0:
+                # Use unique table name with counter to avoid conflicts
+                table_name = f"Table{table_counter}"
+                table_counter += 1
+                
+                try:
+                    tab = Table(displayName=table_name,
+                                ref=f'A1:{get_column_letter(sheet.max_column)}{sheet.max_row}')
+                    tab.tableStyleInfo = style
+                    sheet.add_table(tab)
+                except Exception as e:
+                    logger.warning(f"[{job_id}] Could not add table to sheet {sheet.title}: {e}")
         
         # Save output
         output_file = OUTPUT_DIR / f"{job_id}_results.xlsx"
