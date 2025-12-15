@@ -1,8 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/node_modules/
+package-lock.json
+*.log
+
+# Application specific
 backend/uploads/
 backend/outputs/
-frontend/node_modules/
-node_modules/
-*.log
-.DS_Store
-.vite/
+backend/data/*.csv
+backend/.env
+
+# Build artifacts
+build/
 dist/
+*.spec
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Vite
+.vite/
