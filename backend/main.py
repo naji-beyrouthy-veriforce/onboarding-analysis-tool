@@ -686,14 +686,16 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                     logger.warning(f"[{job_id}] Could not add table to sheet {sheet.title}: {e}")
         
         # Save output
-        output_file = OUTPUT_DIR / f"{job_id}_results.xlsx"
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        output_filename = f"Onboarding_Analysis_Results_{timestamp}.xlsx"
+        output_file = OUTPUT_DIR / output_filename
         logger.info(f"[{job_id}] Saving to {output_file}...")
         update_job(job_id, progress=0.98, message="Saving results...")
         out_wb.save(filename=output_file)
 
         elapsed = time.time() - t0
         logger.info(f"[{job_id}] ========== JOB COMPLETE in {elapsed:.1f}s ==========")
-        update_job(job_id, status="completed", progress=1.0, message="Done!", result_file=output_file.name)
+        update_job(job_id, status="completed", progress=1.0, message="Done!", result_file=output_filename)
 
     except Exception as e:
         logger.exception(f"[{job_id}] FAILED: {e}")
