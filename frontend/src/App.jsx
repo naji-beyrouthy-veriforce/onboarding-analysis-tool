@@ -423,7 +423,7 @@ function App() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div>
                             <label className="block text-sm font-semibold text-slate-100 mb-3">
-                              Hiring Client List
+                              CBX Database
                             </label>
                             <div className="relative border-2 border-dashed border-slate-700 rounded-xl p-8 hover:border-sky-500 transition-all bg-slate-900">
                               <input
@@ -452,7 +452,7 @@ function App() {
 
                           <div>
                             <label className="block text-sm font-semibold text-slate-100 mb-3">
-                              CBX Database
+                              Hiring Client List
                             </label>
                             <div className="relative border-2 border-dashed border-slate-700 rounded-xl p-8 hover:border-sky-500 transition-all bg-slate-900">
                               <input
