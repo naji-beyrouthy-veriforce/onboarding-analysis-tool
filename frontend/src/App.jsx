@@ -439,7 +439,7 @@ function App() {
                                   <FileText className="mx-auto h-12 w-12 text-sky-400 mb-3" />
                                 )}
                                 <p className="text-sm font-medium text-slate-100 mb-1">
-                                  {cbxFile ? cbxFile.name : 'Click to select HC file'}
+                                  {cbxFile ? cbxFile.name : 'Click to select CBX Database file'}
                                 </p>
                                 <p className="text-xs text-slate-400">
                                   {cbxFile
@@ -468,7 +468,7 @@ function App() {
                                   <Upload className="mx-auto h-12 w-12 text-indigo-400 mb-3" />
                                 )}
                                 <p className="text-sm font-medium text-slate-100 mb-1">
-                                  {hcFile ? hcFile.name : 'Click to select CBX file'}
+                                  {hcFile ? hcFile.name : 'Click to select HC List file'}
                                 </p>
                                 <p className="text-xs text-slate-400">
                                   {hcFile
