@@ -562,33 +562,31 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             is_complete_data = has_company and (has_address or has_email)
             
             # Dynamic thresholds based on data completeness
+            # Always keep max matches at 10 (original limit)
+            max_matches_to_keep = 10
+            
             if is_complete_data:
                 # Complete data: use strict thresholds (original values)
                 min_company_ratio = 75.0
                 min_address_ratio = 85.0
-                max_matches_to_keep = 10  # Original limit
             else:
                 # Incomplete data: be more lenient to capture potential matches
                 if has_company and not has_address and not has_email:
                     # Only company name: very lenient
-                    min_company_ratio = 50.0
+                    min_company_ratio = 80.0
                     min_address_ratio = 0.0  # Don't require address match
-                    max_matches_to_keep = 20  # Return more matches for review
                 elif has_company and has_email and not has_address:
                     # Company + email but no address: moderately lenient
                     min_company_ratio = 60.0
                     min_address_ratio = 0.0
-                    max_matches_to_keep = 15
                 elif has_company and has_address and not has_email:
                     # Company + address but no email: moderately lenient
                     min_company_ratio = 65.0
                     min_address_ratio = 70.0
-                    max_matches_to_keep = 15
                 else:
                     # Very incomplete: maximum leniency
                     min_company_ratio = 40.0
                     min_address_ratio = 0.0
-                    max_matches_to_keep = 25
 
             if not smart_boolean(hc_row[HC_DO_NOT_MATCH]):
                 if hc_force_cbx:
