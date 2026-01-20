@@ -1,13 +1,19 @@
 """
-Timezone conversion helper - stub for legacy script compatibility
+Timezone conversion helper for legacy script compatibility.
+Currently a stub implementation since timezone handling is not actively used.
 """
 
 def convertFromIANATimezone(tz_string):
     """
     Convert IANA timezone to Windows format.
-    For now, just return the input as-is since we're not using it in the new version.
+    Returns the input as-is for now since timezone conversion is not implemented.
+    
+    Args:
+        tz_string: IANA timezone string
+        
+    Returns:
+        str: The input string unchanged
     """
-    if not tz_string:
-        return ""
-    return str(tz_string)
+    return str(tz_string) if tz_string else ""
+
 

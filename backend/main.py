@@ -13,10 +13,7 @@ import openpyxl
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment
-try:
-    from rapidfuzz import fuzz
-except ImportError:
-    from fuzzywuzzy import fuzz
+from rapidfuzz import fuzz
 from datetime import datetime, timedelta
 import uuid
 import shutil
@@ -26,11 +23,26 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import time
 import string
+from threading import Lock
+from contextlib import asynccontextmanager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Onboarding Analysis Tool API")
+EXECUTOR = ThreadPoolExecutor(max_workers=2)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    yield
+    # Shutdown
+    try:
+        EXECUTOR.shutdown(wait=False, cancel_futures=True)
+    except TypeError:
+        # Python < 3.9 doesn't support cancel_futures
+        EXECUTOR.shutdown(wait=False)
+
+app = FastAPI(title="Onboarding Analysis Tool API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +58,10 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 jobs: Dict[str, Dict[str, Any]] = {}
+jobs_lock = Lock()
+
+def _is_supported_upload(path: Path) -> bool:
+    return path.suffix.lower() in (".csv", ".xlsx", ".xls")
 
 # ============================================================================
 # EXACT LEGACY SCRIPT CONSTANTS AND FUNCTIONS
@@ -106,6 +122,25 @@ analysis_headers = ['cbx_id', 'hc_contractor_summary', 'analysis', 'cbx_contract
                     'match_count_with_hc', 'is_subscription_upgrade', 'upgrade_price', 'prorated_upgrade_price',
                     'create_in_cbx', 'action', 'index']
 
+rd_headers = ['contractor_name', 'contact_first_name', 'contact_last_name', 'contact_email', 'contact_phone',
+              'contact_language', 'address', 'city', 'province_state_iso2', 'country_iso2',
+              'postal_code', 'description', 'phone', 'extension', 'fax', 'website', 'language',
+              'qualification_expiration_date', 'qualification_status', 'contact_currency',
+              'agent_in_charge_id', 'renewal_date', 'information_shared', 'contact_timezone', 'questionnaire_name',
+              'questionnaire_ids',
+              'pricing_group_code', 'pricing_group_id', 'hiring_client_id', 'contractorcheck_account',
+              'assessment_level']
+
+existing_contractors_headers = ['cbx_id']
+existing_contractors_headers.extend(rd_headers.copy())
+
+hubspot_headers = ['contractor_name', 'contact_first_name', 'contact_last_name', 'contact_email', 'contact_phone',
+                   'contact_language', 'address', 'city', 'province_state_iso2', 'country_iso2',
+                   'postal_code', 'cbx_id', 'cbx_expiration_date', 'questionnaire_name',
+                   'questionnaire_id', 'hiring_client_name', 'hiring_client_id', 'action']
+
+metadata_headers = ['metadata_x', 'metadata_y', 'metadata_z', '...']
+
 BASE_GENERIC_DOMAIN = ['yahoo.ca', 'yahoo.com', 'hotmail.com', 'gmail.com', 'outlook.com',
                        'bell.com', 'bell.ca', 'videotron.ca', 'eastlink.ca', 'kos.net', 'bellnet.ca', 'sasktel.net',
                        'aol.com', 'tlb.sympatico.ca', 'sogetel.net', 'cgocable.ca',
@@ -133,7 +168,6 @@ GENERIC_WORDS_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-
 def smart_boolean(bool_data):
     if isinstance(bool_data, str):
         bool_data = bool_data.lower().strip()
@@ -141,17 +175,14 @@ def smart_boolean(bool_data):
     else:
         return bool(bool_data)
 
-
 def norm_name(name):
     if not name:
         return ''
     return str(name).translate(str.maketrans('', '', string.punctuation)).strip().lower()
 
-
 def remove_generics(company_name):
     # Use pre-compiled pattern for 5-10x performance improvement
     return GENERIC_WORDS_PATTERN.sub('', company_name)
-
 
 def clean_company_name(name):
     if not name or (isinstance(name, str) and not name.strip()):
@@ -166,14 +197,12 @@ def clean_company_name(name):
     except:
         return ''
 
-
 def parse_assessment_level(level):
     if level is None or (isinstance(level, int) and 0 < level < 4):
         return level if level else 0
     if isinstance(level, str) and level.lower() in assessment_levels:
         return assessment_levels[level.lower()]
     return 0
-
 
 def core_mandatory_provided(hcd):
     mandatory_fields = (HC_COMPANY, HC_FIRSTNAME, HC_LASTNAME, HC_EMAIL, HC_CONTACT_PHONE,
@@ -320,9 +349,12 @@ def action(hc_data, cbx_data, create, subscription_update, expiration_date, is_q
 
 
 def update_job(job_id: str, **kwargs):
-    if job_id in jobs:
-        jobs[job_id].update(kwargs)
-        logger.info(f"[{job_id}] Updated: {kwargs}")
+    with jobs_lock:
+        if job_id in jobs:
+            jobs[job_id].update(kwargs)
+            # Avoid noisy progress-only logs; keep status/error/result updates visible.
+            if any(k in kwargs for k in ("status", "error", "result_file")):
+                logger.info(f"[{job_id}] Updated: {kwargs}")
 
 
 # ============================================================================
@@ -356,10 +388,23 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
 
         # Pre-normalize CBX data once to avoid repeated computations during matching
         logger.info(f"[{job_id}] Pre-normalizing {len(cbx_data)} CBX records for faster matching...")
-        for cbx_row in cbx_data:
-            cbx_row.append(clean_company_name(cbx_row[CBX_COMPANY_EN]))  # Index 28: normalized EN name
-            cbx_row.append(clean_company_name(cbx_row[CBX_COMPANY_FR]))  # Index 29: normalized FR name
-            cbx_row.append(str(cbx_row[CBX_ADDRESS] if cbx_row[CBX_ADDRESS] else '').lower().replace('.', '').strip())  # Index 30: normalized address
+        for idx, cbx_row in enumerate(cbx_data):
+            try:
+                cbx_row.append(clean_company_name(cbx_row[CBX_COMPANY_EN]))  # Index 28: normalized EN name
+                cbx_row.append(clean_company_name(cbx_row[CBX_COMPANY_FR]))  # Index 29: normalized FR name
+                cbx_row.append(str(cbx_row[CBX_ADDRESS] if cbx_row[CBX_ADDRESS] else '').lower().replace('.', '').strip())  # Index 30: normalized address
+                # Pre-normalize email and domain for faster comparison
+                cbx_email_lower = str(cbx_row[CBX_EMAIL]).lower()
+                cbx_row.append(cbx_email_lower)  # Index 31: normalized email
+                cbx_row.append(cbx_email_lower[cbx_email_lower.find('@') + 1:] if '@' in cbx_email_lower else '')  # Index 32: email domain
+                cbx_row.append(str(cbx_row[CBX_ZIP] if cbx_row[CBX_ZIP] else '').replace(' ', '').upper())  # Index 33: normalized ZIP
+                # Pre-clean previous names for faster comparison
+                prev_names = str(cbx_row[CBX_COMPANY_OLD]).split(LIST_SEPARATOR)
+                cleaned_prev = [clean_company_name(item) for item in prev_names if item and item not in (cbx_row[CBX_COMPANY_EN], cbx_row[CBX_COMPANY_FR])]
+                cbx_row.append([n for n in cleaned_prev if n])  # Index 34: cleaned previous names list
+            except IndexError as e:
+                logger.error(f"[{job_id}] CBX row {idx+2} missing columns. Expected 28, got {len(cbx_row)}. Error: {e}")
+                raise ValueError(f"CBX file format error at row {idx+2}: Missing required columns. Expected 28 columns, found {len(cbx_row)}.")
         logger.info(f"[{job_id}] Pre-normalization complete")
 
         # Read HC data
@@ -403,17 +448,93 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
         out_ws_add_questionnaire = out_wb.create_sheet(title="add_questionnaire")
         out_ws_missing_information = out_wb.create_sheet(title="missing_info")
         out_ws_follow_up_qualification = out_wb.create_sheet(title="follow_up_qualification")
+        out_ws_onboarding_rd = out_wb.create_sheet(title="Data to import")
+        out_ws_existing_contractors = out_wb.create_sheet(title="Existing Contractors")
+        out_ws_onboarding_hs = out_wb.create_sheet(title="Data for HS")
 
         sheets = (out_ws, out_ws_onboarding, out_ws_association_fee, out_ws_re_onboarding,
                   out_ws_subscription_upgrade, out_ws_ambiguous_onboarding, out_ws_restore_suspended,
                   out_ws_activation_link, out_ws_already_qualified, out_ws_add_questionnaire,
-                  out_ws_missing_information, out_ws_follow_up_qualification)
+                  out_ws_missing_information, out_ws_follow_up_qualification,
+                  out_ws_onboarding_rd, out_ws_existing_contractors, out_ws_onboarding_hs)
 
-        # Write headers
+        # Handle metadata columns and create mappings for special sheets
+        metadata_indexes = []
+        for idx, val in enumerate(hc_headers):
+            if val.lower().startswith('metadata'):
+                metadata_indexes.append(idx)
+        metadata_indexes.sort(reverse=True)
+        
+        # Create combined headers with metadata moved to end
         final_headers = list(hc_headers) + analysis_headers
-        for sheet in sheets:
-            for i, header in enumerate(final_headers):
-                sheet.cell(1, i + 1, header)
+        metadata_array = []
+        for md_index in metadata_indexes:
+            if md_index < len(final_headers):
+                metadata_array.insert(0, final_headers.pop(md_index))
+        final_headers.extend(metadata_array)
+        
+        # Extend special sheet headers with metadata
+        hubspot_headers_with_metadata = hubspot_headers.copy()
+        hubspot_headers_with_metadata.extend(metadata_array)
+        existing_contractors_headers_with_metadata = existing_contractors_headers.copy()
+        existing_contractors_headers_with_metadata.extend(metadata_array)
+        rd_headers_with_metadata = rd_headers.copy()
+        rd_headers_with_metadata.extend(metadata_array)
+        
+        # Create header mappings for special sheets
+        rd_headers_mapping = []
+        hs_headers_mapping = []
+        existing_contractors_headers_mapping = []
+        rd_pricing_group_id_col = -1
+        rd_pricing_group_code_col = -1
+        
+        column_rd = column_hs = column_existing_contractors = 0
+        for index, value in enumerate(final_headers):
+            # Write headers to standard sheets (skip the last 3 special sheets)
+            for sheet in sheets[:-3]:
+                sheet.cell(1, index + 1, value)
+            
+            # Map rd_headers (Data to import sheet)
+            rd_headers_for_value = [s for s in rd_headers_with_metadata if value in s]
+            if rd_headers_for_value:
+                column_rd += 1
+                rd_headers_mapping.append(True)
+                # Track pricing_group columns for swapping
+                if value == "pricing_group_id":
+                    adjustment = 1
+                    rd_pricing_group_id_col = column_rd
+                elif value == "pricing_group_code":
+                    adjustment = -1
+                    rd_pricing_group_code_col = column_rd
+                else:
+                    adjustment = 0
+                
+                if value in rd_headers_with_metadata:
+                    out_ws_onboarding_rd.cell(1, column_rd + adjustment, value)
+                else:
+                    out_ws_onboarding_rd.cell(1, column_rd, rd_headers_for_value[0])
+            else:
+                rd_headers_mapping.append(False)
+            
+            # Map hubspot_headers (Data for HS sheet)
+            if value in hubspot_headers_with_metadata:
+                column_hs += 1
+                hs_headers_mapping.append(True)
+                out_ws_onboarding_hs.cell(1, column_hs, value)
+            else:
+                hs_headers_mapping.append(False)
+            
+            # Map existing_contractors_headers (Existing Contractors sheet)
+            existing_contractors_headers_for_value = [s for s in existing_contractors_headers_with_metadata if value in s]
+            if existing_contractors_headers_for_value:
+                column_existing_contractors += 1
+                existing_contractors_headers_mapping.append(True)
+                if value in existing_contractors_headers_with_metadata:
+                    out_ws_existing_contractors.cell(1, column_existing_contractors, value)
+                else:
+                    out_ws_existing_contractors.cell(1, column_existing_contractors, existing_contractors_headers_for_value[0])
+            else:
+                existing_contractors_headers_mapping.append(False)
 
         # Process each HC contractor (EXACT LEGACY LOGIC)
         for index, hc_row in enumerate(hc_data):
@@ -437,10 +558,23 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                     if cbx_row:
                         matches.append(add_analysis_data(hc_row, cbx_row))
                 else:
+                    hc_country = hc_row[HC_COUNTRY]
                     for cbx_row in cbx_data:
-                        cbx_email = str(cbx_row[CBX_EMAIL]).lower()
-                        cbx_domain = cbx_email[cbx_email.find('@') + 1:] if '@' in cbx_email else ''
+                        # EARLY EXIT: Skip entirely if countries don't match (fastest check)
+                        # Only compare countries if BOTH are non-empty
+                        if hc_country and cbx_row[CBX_COUNTRY] and cbx_row[CBX_COUNTRY] != hc_country:
+                            continue
+                        
+                        # Use pre-normalized data (indexes 28-34)
+                        cbx_company_en = cbx_row[28] if len(cbx_row) > 28 else clean_company_name(cbx_row[CBX_COMPANY_EN])
+                        cbx_company_fr = cbx_row[29] if len(cbx_row) > 29 else clean_company_name(cbx_row[CBX_COMPANY_FR])
+                        cbx_address = cbx_row[30] if len(cbx_row) > 30 else str(cbx_row[CBX_ADDRESS] if cbx_row[CBX_ADDRESS] else '').lower().replace('.', '').strip()
+                        cbx_email = cbx_row[31] if len(cbx_row) > 31 else str(cbx_row[CBX_EMAIL]).lower()
+                        cbx_domain = cbx_row[32] if len(cbx_row) > 32 else (cbx_email[cbx_email.find('@') + 1:] if '@' in cbx_email else '')
+                        cbx_zip = cbx_row[33] if len(cbx_row) > 33 else str(cbx_row[CBX_ZIP] if cbx_row[CBX_ZIP] else '').replace(' ', '').upper()
+                        cleaned_prev_names = cbx_row[34] if len(cbx_row) > 34 else []
 
+                        # Contact match calculation
                         if hc_email:
                             if hc_domain in GENERIC_DOMAIN:
                                 contact_match = (cbx_email == hc_email)
@@ -449,19 +583,10 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                         else:
                             contact_match = False
 
-                        cbx_zip = str(cbx_row[CBX_ZIP] if cbx_row[CBX_ZIP] else '').replace(' ', '').upper()
-                        
-                        # Use pre-normalized data (indexes 28, 29, 30)
-                        # Safety check: fallback to on-the-fly computation if pre-normalization failed
-                        cbx_company_en = cbx_row[28] if len(cbx_row) > 28 else clean_company_name(cbx_row[CBX_COMPANY_EN])
-                        cbx_company_fr = cbx_row[29] if len(cbx_row) > 29 else clean_company_name(cbx_row[CBX_COMPANY_FR])
-                        cbx_address = cbx_row[30] if len(cbx_row) > 30 else str(cbx_row[CBX_ADDRESS] if cbx_row[CBX_ADDRESS] else '').lower().replace('.', '').strip()
-
-                        # EXACT legacy ratio calculation
-                        if cbx_row[CBX_COUNTRY] != hc_row[HC_COUNTRY]:
+                        # Address ratio calculation - only check country if BOTH have countries
+                        if hc_country and cbx_row[CBX_COUNTRY] and cbx_row[CBX_COUNTRY] != hc_country:
                             ratio_zip = ratio_address = 0.0
                         elif not hc_address or not cbx_address:
-                            # If either address is empty, set ratio to 0
                             ratio_zip = ratio_address = 0.0
                         else:
                             ratio_zip = fuzz.ratio(cbx_zip, hc_zip)
@@ -470,50 +595,68 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                             ratio_address = ratio_address if ratio_zip == 0 else ratio_zip if ratio_address == 0 \
                                 else ratio_address * ratio_zip / 100
 
-                        ratio_company_fr = fuzz.token_sort_ratio(cbx_company_fr, clean_hc_company)
-                        ratio_company_en = fuzz.token_sort_ratio(cbx_company_en, clean_hc_company)
-                        ratio_company = ratio_company_fr if ratio_company_fr > ratio_company_en else ratio_company_en
+                        # OPTIMIZATION: Skip fuzzy matching for very short/empty company names
+                        if len(clean_hc_company) < 3 or (len(cbx_company_en) < 3 and len(cbx_company_fr) < 3):
+                            ratio_company = 0
+                        else:
+                            ratio_company_fr = fuzz.token_sort_ratio(cbx_company_fr, clean_hc_company)
+                            ratio_company_en = fuzz.token_sort_ratio(cbx_company_en, clean_hc_company)
+                            ratio_company = ratio_company_fr if ratio_company_fr > ratio_company_en else ratio_company_en
 
-                        # Check previous names
-                        prev_names = str(cbx_row[CBX_COMPANY_OLD]).split(LIST_SEPARATOR)
-                        ratio_previous = 0
-                        for item in prev_names:
-                            if item in (cbx_row[CBX_COMPANY_EN], cbx_row[CBX_COMPANY_FR]):
-                                continue
-                            item_clean = clean_company_name(item)
-                            if item_clean:
+                            # Check previous names using pre-cleaned list
+                            ratio_previous = 0
+                            for item_clean in cleaned_prev_names:
                                 r = fuzz.token_sort_ratio(item_clean, clean_hc_company)
                                 if r > ratio_previous:
                                     ratio_previous = r
 
-                        if ratio_previous > ratio_company:
-                            ratio_company = ratio_previous
+                            if ratio_previous > ratio_company:
+                                ratio_company = ratio_previous
 
-                        # Matching logic - conditions are checked in priority order and are mutually exclusive
+                        # Matching logic - conditions checked in priority order (mutually exclusive)
+                        # Order by confidence: strongest combined signals → strong single signals → fallback signals
+                        
                         if ratio_company == 100.0:
-                            # Perfect company name match - verify email domain if emails exist
+                            # HIGHEST PRIORITY: Perfect company name match with email verification
                             if hc_email and cbx_email:
                                 # Both have emails - domains must match
                                 if hc_domain == cbx_domain:
                                     matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
-                                # If domains don't match, skip this record (no match)
+                                # If domains don't match, check address as secondary validation
+                                elif ratio_address >= min_address_ratio:
+                                    # Perfect name + good address = likely same company despite email change
+                                    matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
                             else:
                                 # At least one email is missing - match based on company name alone
                                 matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
                         elif ratio_company >= min_company_ratio and ratio_address >= min_address_ratio:
-                            # Both company and address meet thresholds (PRIMARY MATCH)
+                            # PRIMARY: Strong dual signal - both company (≥75%) AND address (≥85%) meet thresholds
+                            # Combined signals provide higher confidence than single strong signal
+                            matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
+                        elif ratio_address == 100.0 and ratio_company >= 70.0:
+                            # Perfect address match + reasonable company similarity
+                            # Address is highly stable identifier, catches name variations at same location
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
                         elif ratio_company >= 95.0:
-                            # Very high company name similarity alone is sufficient
+                            # Very high company similarity alone (ignores address)
+                            # Strong single signal for companies that may have moved or lack address data
+                            matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
+                        elif ratio_company >= 85.0 and contact_match and not hc_address and not cbx_address:
+                            # Strong company + email match when both addresses are legitimately missing
+                            # Fills gap between dual-signal (75%+85% addr) and very-high company (95%)
+                            # Requires email verification as secondary signal to compensate for missing addresses
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
                         elif contact_match and ratio_company >= 33.0:
-                            # Email domain/exact match with good company similarity
+                            # Email domain match + moderate company similarity (dual signal)
+                            # 33% threshold catches legitimate variations with same domain
+                            # Same email domain strongly indicates same company
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
                         elif hc_email and cbx_email == hc_email and ratio_company >= 20.0:
-                            # Exact same email with minimal company similarity (20%) - likely same contact
+                            # FALLBACK: Exact same email with minimal company similarity
+                            # Safety net for same contact person potentially working at different companies
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
 
-            # Filter and sort matches (EXACT LEGACY)
+            # Filter and sort matches
             matches = [m for m in matches if 'DO NOT USE' not in str(m['company']).upper()]
 
             hc_name = str(hc_row[HC_HIRING_CLIENT_NAME]).strip().lower()
@@ -529,6 +672,8 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             if active_matches:
                 matches = active_matches
 
+            # Sort prioritizing company name first (more stable identifier than address)
+            # Then address, then hiring client relationships, then modules
             matches = sorted(matches, key=lambda x: (
                 x.get('ratio_company', 0), x.get('ratio_address', 0),
                 x.get('hiring_client_count', 0), x.get('modules', '')
@@ -550,6 +695,9 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             prorated_upgrade_price = 0.00
 
             if uniques_cbx_id:
+                # Set the analysis string in the first match BEFORE extracting values
+                matches[0]['analysis'] = '\n'.join(ids)
+                
                 for key, value in matches[0].items():
                     if key != 'matched_qstatus':
                         match_data.append(value)
@@ -557,7 +705,6 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                 hc_row.append(True if hc_domain in GENERIC_DOMAIN else False)
                 hc_row.append(len(uniques_cbx_id) if len(uniques_cbx_id) else '')
                 hc_row.append(len([i for i in matches if i['hiring_client_count'] > 0]))
-                hc_row[HC_HEADER_LENGTH + analysis_headers.index("analysis")] = ('\n'.join(ids))
 
                 # Subscription upgrade calculation
                 base_fee = hc_row[HC_BASE_SUBSCRIPTION_FEE] if hc_row[HC_BASE_SUBSCRIPTION_FEE] else CBX_DEFAULT_STANDARD_SUBSCRIPTION
@@ -599,6 +746,13 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                                  subscription_upgrade, matches[0]['expiration_date'] if len(matches) else None,
                                  matches[0]['is_qualified'] if len(matches) else False))
             hc_row.append(index + 1)
+            
+            # Move metadata to the end (same logic as legacy script)
+            metadata_data = []
+            for md_index in metadata_indexes:
+                if md_index < len(hc_row):
+                    metadata_data.insert(0, hc_row.pop(md_index))
+            hc_row.extend(metadata_data)
 
             # Write to all sheet
             for i, value in enumerate(hc_row):
@@ -609,6 +763,8 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                 progress = 0.05 + 0.85 * ((index + 1) / total)
                 update_job(job_id, progress=progress, message=f"Processing: {index + 1}/{total}")
                 logger.info(f"[{job_id}] Progress: {index + 1}/{total} ({progress*100:.1f}%)")
+
+        logger.info(f"[{job_id}] Writing action sheets...")
 
         # Write action-specific sheets
         logger.info(f"[{job_id}] Writing action sheets...")
@@ -633,6 +789,41 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             for idx, row in enumerate(filtered):
                 for i, value in enumerate(row):
                     sheet.cell(idx + 2, i + 1, value)
+        
+        # Write Data to import sheet (onboarding contractors only)
+        logger.info(f"[{job_id}] Writing 'Data to import' sheet...")
+        hc_onboarding_rd = [row for row in hc_data if row[action_col] == 'onboarding']
+        for idx, row in enumerate(hc_onboarding_rd):
+            column = 0
+            for i, value in enumerate(row):
+                if i < len(rd_headers_mapping) and rd_headers_mapping[i]:
+                    column += 1
+                    # Swap pricing_group_id and pricing_group_code columns
+                    if column == rd_pricing_group_id_col:
+                        out_ws_onboarding_rd.cell(idx + 2, column + 1, value)
+                    elif column == rd_pricing_group_code_col:
+                        out_ws_onboarding_rd.cell(idx + 2, column - 1, value)
+                    else:
+                        out_ws_onboarding_rd.cell(idx + 2, column, value)
+        
+        # Write Existing Contractors sheet (all except onboarding and missing_info)
+        logger.info(f"[{job_id}] Writing 'Existing Contractors' sheet...")
+        existing_contractors_rd = [row for row in hc_data if row[action_col] != 'onboarding' and row[action_col] != 'missing_info']
+        for idx, row in enumerate(existing_contractors_rd):
+            column = 0
+            for i, value in enumerate(row):
+                if i < len(existing_contractors_headers_mapping) and existing_contractors_headers_mapping[i]:
+                    column += 1
+                    out_ws_existing_contractors.cell(idx + 2, column, value)
+        
+        # Write Data for HS sheet (all data)
+        logger.info(f"[{job_id}] Writing 'Data for HS' sheet...")
+        for idx, row in enumerate(hc_data):
+            column = 0
+            for i, value in enumerate(row):
+                if i < len(hs_headers_mapping) and hs_headers_mapping[i]:
+                    column += 1
+                    out_ws_onboarding_hs.cell(idx + 2, column, value)
 
         # Format Excel sheets (like legacy script)
         logger.info(f"[{job_id}] Formatting Excel sheets...")
@@ -653,9 +844,9 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             for col, value in dims.items():
                 sheet.column_dimensions[col].width = value
             
-            # Set specific columns to fixed width for long text fields
+            # Set specific columns to fixed width for long text fields (skip special sheets: Data to import, Existing Contractors, Data for HS)
             hc_header_length = len(hc_headers)
-            if sheet.max_row > 1:  # Must have at least headers + 1 data row
+            if sheet not in (out_ws_onboarding_rd, out_ws_existing_contractors, out_ws_onboarding_hs) and sheet.max_row > 1:  # Must have at least headers + 1 data row
                 try:
                     # Find column indexes for specific headers
                     summary_col = hc_header_length + analysis_headers.index("hc_contractor_summary") + 1
@@ -700,6 +891,14 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
     except Exception as e:
         logger.exception(f"[{job_id}] FAILED: {e}")
         update_job(job_id, status="failed", message=str(e), error=str(e))
+    finally:
+        # Best-effort cleanup of uploaded inputs to avoid unbounded disk growth.
+        for p in (cbx_path, hc_path):
+            try:
+                if p and p.exists():
+                    p.unlink()
+            except Exception:
+                logger.warning(f"[{job_id}] Could not delete temp file: {p}")
 
 
 # ============================================================================
@@ -720,27 +919,27 @@ class JobStatus(BaseModel):
 # API ENDPOINTS
 # ============================================================================
 
-EXECUTOR = ThreadPoolExecutor(max_workers=2)
-
-
 @app.post("/api/match", response_model=JobStatus)
 async def match(
     cbx_file: UploadFile = File(...),
     hc_file: UploadFile = File(...),
 ):
     try:
-        # Use legacy script defaults (hardcoded)
-        min_company_ratio = 80  # Legacy default
-        min_address_ratio = 80  # Legacy default
+        # Fixed optimized thresholds
+        min_company_ratio = 75
+        min_address_ratio = 85
 
         logger.info("========== NEW REQUEST ==========")
         logger.info(f"CBX: {cbx_file.filename}, HC: {hc_file.filename}")
-        logger.info(f"Using legacy defaults - Ratios: company={min_company_ratio}, address={min_address_ratio}")
+        logger.info(f"Match thresholds - Company: {min_company_ratio}%, Address: {min_address_ratio}%")
 
         job_id = str(uuid.uuid4())[:8]
 
         cbx_path = UPLOAD_DIR / f"{job_id}_cbx{Path(cbx_file.filename).suffix}"
         hc_path = UPLOAD_DIR / f"{job_id}_hc{Path(hc_file.filename).suffix}"
+
+        if not _is_supported_upload(cbx_path) or not _is_supported_upload(hc_path):
+            raise HTTPException(status_code=400, detail="Only .csv, .xlsx, .xls files are supported")
 
         # Save files
         with open(cbx_path, "wb") as f:
@@ -748,25 +947,33 @@ async def match(
         with open(hc_path, "wb") as f:
             shutil.copyfileobj(hc_file.file, f)
 
+        # Close upload streams early to free resources.
+        try:
+            await cbx_file.close()
+        finally:
+            await hc_file.close()
+
         logger.info(f"Files saved: {cbx_path}, {hc_path}")
 
         # Create job
-        jobs[job_id] = {
-            "job_id": job_id,
-            "status": "processing",
-            "progress": 0.0,
-            "message": "Starting...",
-            "created_at": datetime.now().isoformat(),
-            "result_file": None,
-            "error": None,
-        }
+        with jobs_lock:
+            jobs[job_id] = {
+                "job_id": job_id,
+                "status": "processing",
+                "progress": 0.0,
+                "message": "Starting...",
+                "created_at": datetime.now().isoformat(),
+                "result_file": None,
+                "error": None,
+            }
 
-        # Start background processing with legacy defaults
+        # Start background processing
         loop = asyncio.get_running_loop()
         loop.run_in_executor(EXECUTOR, process_matching_job, job_id, cbx_path, hc_path, min_company_ratio, min_address_ratio)
 
-        logger.info(f"Job {job_id} started with legacy defaults (80/80)")
-        return JobStatus(**jobs[job_id])
+        logger.info(f"Job {job_id} started with thresholds ({min_company_ratio}/{min_address_ratio})")
+        with jobs_lock:
+            return JobStatus(**jobs[job_id])
 
     except Exception as e:
         logger.exception(f"Error starting job: {e}")
@@ -775,16 +982,18 @@ async def match(
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
 async def get_status(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(404, "Job not found")
-    return JobStatus(**jobs[job_id])
+    with jobs_lock:
+        if job_id not in jobs:
+            raise HTTPException(404, "Job not found")
+        return JobStatus(**jobs[job_id])
 
 
 @app.get("/api/jobs/{job_id}/download")
 async def download(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(404, "Job not found")
-    job = jobs[job_id]
+    with jobs_lock:
+        if job_id not in jobs:
+            raise HTTPException(404, "Job not found")
+        job = dict(jobs[job_id])
     if job["status"] != "completed":
         raise HTTPException(400, "Job not completed")
     file_path = OUTPUT_DIR / job["result_file"]
@@ -795,14 +1004,17 @@ async def download(job_id: str):
 
 @app.get("/api/jobs")
 async def list_jobs():
-    return {"jobs": list(jobs.values()), "total": len(jobs)}
+    with jobs_lock:
+        return {"jobs": list(jobs.values()), "total": len(jobs)}
 
 
 @app.get("/api/health")
 async def health():
+    with jobs_lock:
+        jobs_active = len(jobs)
     return {
         "status": "healthy",
-        "jobs_active": len(jobs),
+        "jobs_active": jobs_active,
         "upload_dir": str(UPLOAD_DIR),
         "output_dir": str(OUTPUT_DIR)
     }
