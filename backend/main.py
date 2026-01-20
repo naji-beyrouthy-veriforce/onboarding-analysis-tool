@@ -552,6 +552,44 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             hc_address = str(hc_row[HC_STREET] if hc_row[HC_STREET] else '').lower().replace('.', '').strip()
             hc_force_cbx = str(hc_row[HC_FORCE_CBX_ID] if hc_row[HC_FORCE_CBX_ID] else '')
 
+            # Determine data completeness and adjust matching thresholds accordingly
+            # Complete data = have company name + (address OR email)
+            has_company = bool(hc_company and len(clean_hc_company) >= 3)
+            has_address = bool(hc_address and hc_zip)
+            has_email = bool(hc_email and '@' in hc_email)
+            
+            # Determine if we have complete or incomplete information
+            is_complete_data = has_company and (has_address or has_email)
+            
+            # Dynamic thresholds based on data completeness
+            if is_complete_data:
+                # Complete data: use strict thresholds (original values)
+                min_company_ratio = 75.0
+                min_address_ratio = 85.0
+                max_matches_to_keep = 10  # Original limit
+            else:
+                # Incomplete data: be more lenient to capture potential matches
+                if has_company and not has_address and not has_email:
+                    # Only company name: very lenient
+                    min_company_ratio = 50.0
+                    min_address_ratio = 0.0  # Don't require address match
+                    max_matches_to_keep = 20  # Return more matches for review
+                elif has_company and has_email and not has_address:
+                    # Company + email but no address: moderately lenient
+                    min_company_ratio = 60.0
+                    min_address_ratio = 0.0
+                    max_matches_to_keep = 15
+                elif has_company and has_address and not has_email:
+                    # Company + address but no email: moderately lenient
+                    min_company_ratio = 65.0
+                    min_address_ratio = 70.0
+                    max_matches_to_keep = 15
+                else:
+                    # Very incomplete: maximum leniency
+                    min_company_ratio = 40.0
+                    min_address_ratio = 0.0
+                    max_matches_to_keep = 25
+
             if not smart_boolean(hc_row[HC_DO_NOT_MATCH]):
                 if hc_force_cbx:
                     cbx_row = next((x for x in cbx_data if str(x[CBX_ID]).strip() == hc_force_cbx), None)
@@ -679,9 +717,9 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                 x.get('hiring_client_count', 0), x.get('modules', '')
             ), reverse=True)
 
-            # Build analysis string
+            # Build analysis string (use dynamic limit based on data completeness)
             ids = []
-            for item in matches[0:10]:
+            for item in matches[0:max_matches_to_keep]:
                 ids.append(f'{item["cbx_id"]}, {item["company"]}, {item["address"]}, {item["city"]}, {item["state"]} '
                            f'{item["country"]} {item["zip"]}, {item["email"]}, {item["first_name"]} {item["last_name"]}'
                            f' --> CR{item["ratio_company"]}, AR{item["ratio_address"]},'
