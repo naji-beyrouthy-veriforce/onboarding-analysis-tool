@@ -22,7 +22,7 @@ function App() {
   // Simple file states - NO pre-upload
   const [cbxFile, setCbxFile] = useState(null);
   const [hcFile, setHcFile] = useState(null);
-  // Matching ratios removed - backend uses legacy defaults (80/80)
+  // Backend uses optimized thresholds: Company 75%, Address 85%
 
   // Job states
   const [jobId, setJobId] = useState(null);
@@ -211,7 +211,7 @@ function App() {
       const formData = new FormData();
       formData.append('cbx_file', cbxFile);
       formData.append('hc_file', hcFile);
-      // Matching ratios removed - backend uses legacy defaults (80/80)
+      // Backend uses optimized thresholds (no configuration needed)
 
       const response = await fetch(`${API_URL}/api/match`, {
         method: 'POST',
@@ -483,7 +483,7 @@ function App() {
                         <div className="bg-slate-900 rounded-xl p-4 border border-slate-700">
                           <p className="text-sm text-slate-400 flex items-center">
                             <Settings className="h-4 w-4 mr-2 text-slate-500" />
-                            Using legacy matching defaults: Company 80%, Address 80%
+                            Using optimized matching thresholds: Company 75%, Address 85%
                           </p>
                         </div>
 
