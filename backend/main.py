@@ -552,39 +552,38 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             hc_address = str(hc_row[HC_STREET] if hc_row[HC_STREET] else '').lower().replace('.', '').strip()
             hc_force_cbx = str(hc_row[HC_FORCE_CBX_ID] if hc_row[HC_FORCE_CBX_ID] else '')
 
-            # Determine data completeness and adjust matching thresholds accordingly
-            # Complete data = have company name + (address OR email)
+            # Determine data completeness to dynamically adjust matching thresholds
             has_company = bool(hc_company and len(clean_hc_company) >= 3)
             has_address = bool(hc_address and hc_zip)
             has_email = bool(hc_email and '@' in hc_email)
-            
-            # Determine if we have complete or incomplete information
             is_complete_data = has_company and (has_address or has_email)
             
-            # Dynamic thresholds based on data completeness
-            # Always keep max matches at 10 (original limit)
+            # Maximum number of matches to display in analysis column
             max_matches_to_keep = 10
             
+            # Dynamic matching thresholds based on data completeness
+            # More complete data = stricter thresholds to reduce false positives
+            # Less complete data = more lenient to ensure we don't miss valid matches
             if is_complete_data:
-                # Complete data: use strict thresholds (original values)
+                # Complete data (company + address/email): use strict thresholds
                 min_company_ratio = 75.0
                 min_address_ratio = 85.0
             else:
-                # Incomplete data: be more lenient to capture potential matches
+                # Incomplete data: adjust thresholds based on what we have
                 if has_company and not has_address and not has_email:
-                    # Only company name: very lenient
+                    # Only company name available
                     min_company_ratio = 80.0
-                    min_address_ratio = 0.0  # Don't require address match
+                    min_address_ratio = 0.0
                 elif has_company and has_email and not has_address:
-                    # Company + email but no address: moderately lenient
+                    # Company + email but no address
                     min_company_ratio = 60.0
                     min_address_ratio = 0.0
                 elif has_company and has_address and not has_email:
-                    # Company + address but no email: moderately lenient
+                    # Company + address but no email
                     min_company_ratio = 65.0
                     min_address_ratio = 70.0
                 else:
-                    # Very incomplete: maximum leniency
+                    # Very incomplete data
                     min_company_ratio = 40.0
                     min_address_ratio = 0.0
 
@@ -649,8 +648,13 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                             if ratio_previous > ratio_company:
                                 ratio_company = ratio_previous
 
-                        # Matching logic - conditions checked in priority order (mutually exclusive)
-                        # Order by confidence: strongest combined signals → strong single signals → fallback signals
+                        # ============================================================================
+                        # MATCHING CONDITIONS (Priority Ordered - Mutually Exclusive)
+                        # ============================================================================
+                        # Conditions are evaluated in order of confidence from highest to lowest.
+                        # Each condition is mutually exclusive - once a match is found, no further
+                        # conditions are checked. This ensures consistent, predictable matching.
+                        # ============================================================================
                         
                         if ratio_company == 100.0:
                             # HIGHEST PRIORITY: Perfect company name match with email verification
@@ -692,9 +696,23 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                             # Safety net for same contact person potentially working at different companies
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
 
-            # Filter and sort matches
+            # ============================================================================
+            # MATCH FILTERING AND PRIORITIZATION
+            # ============================================================================
+            # Apply intelligent filtering to refine matches while avoiding false negatives:
+            # 1. Remove "DO NOT USE" entries
+            # 2. Prioritize hiring client relationships (but keep high-confidence non-HC matches)
+            # 3. Prioritize active accounts (but keep high-confidence suspended/non-member matches)
+            # Thresholds adapt based on address data availability to catch duplicate accounts
+            # ============================================================================
+            
+            # Filter out unusable entries
             matches = [m for m in matches if 'DO NOT USE' not in str(m['company']).upper()]
 
+            # Check if any matches have meaningful address data (used for filtering logic)
+            has_any_address = any((m.get('ratio_address') or 0) > 0 for m in matches)
+
+            # Filter 1: Prioritize hiring client relationships
             hc_name = str(hc_row[HC_HIRING_CLIENT_NAME]).strip().lower()
             def has_hc_name(m):
                 names = str(m.get('hiring_client_names', '')).lower().split(';')
@@ -702,26 +720,57 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
 
             hc_matches = [m for m in matches if has_hc_name(m)]
             if hc_matches:
-                matches = hc_matches
+                # Keep hiring client matches but also include high-confidence matches
+                # This prevents losing duplicate companies without the HC relationship yet
+                if not has_any_address:
+                    # No address data: use 80% company threshold (matches dynamic threshold)
+                    high_confidence_matches = [m for m in matches if (m.get('ratio_company') or 0) >= 80]
+                else:
+                    # Have address data: use stricter thresholds (95% company OR 85% company + 85% address)
+                    high_confidence_matches = [m for m in matches if (m.get('ratio_company') or 0) >= 95 or 
+                                              ((m.get('ratio_company') or 0) >= 85 and (m.get('ratio_address') or 0) >= 85)]
+                
+                # Combine and deduplicate by cbx_id
+                seen_ids = set()
+                combined_matches = []
+                for m in hc_matches + high_confidence_matches:
+                    if m.get('cbx_id') not in seen_ids:
+                        seen_ids.add(m.get('cbx_id'))
+                        combined_matches.append(m)
+                matches = combined_matches
 
+            # Filter 2: Prioritize active accounts
             active_matches = [m for m in matches if m.get('registration_status', '').strip() == 'Active']
             if active_matches:
-                matches = active_matches
+                # Keep active matches but also include suspended/non-member high-confidence matches
+                # This ensures all potential duplicate accounts are visible
+                if not has_any_address:
+                    # No address data: use 80% threshold to catch duplicates
+                    very_high_confidence = [m for m in matches if (m.get('ratio_company') or 0) >= 80 and 
+                                            m.get('cbx_id') not in [am.get('cbx_id') for am in active_matches]]
+                else:
+                    # Have address data: use very strict 98% threshold
+                    very_high_confidence = [m for m in matches if (m.get('ratio_company') or 0) >= 98 and 
+                                            m.get('cbx_id') not in [am.get('cbx_id') for am in active_matches]]
+                
+                matches = active_matches + very_high_confidence
 
             # Sort prioritizing company name first (more stable identifier than address)
             # Then address, then hiring client relationships, then modules
             matches = sorted(matches, key=lambda x: (
-                x.get('ratio_company', 0), x.get('ratio_address', 0),
-                x.get('hiring_client_count', 0), x.get('modules', '')
+                (x.get('ratio_company') or 0), 
+                (x.get('ratio_address') or 0),
+                x.get('hiring_client_count', 0), 
+                x.get('modules', '')
             ), reverse=True)
 
-            # Build analysis string (use dynamic limit based on data completeness)
+            # Build analysis string showing top matches (up to max_matches_to_keep)
             ids = []
             for item in matches[0:max_matches_to_keep]:
                 ids.append(f'{item["cbx_id"]}, {item["company"]}, {item["address"]}, {item["city"]}, {item["state"]} '
                            f'{item["country"]} {item["zip"]}, {item["email"]}, {item["first_name"]} {item["last_name"]}'
-                           f' --> CR{item["ratio_company"]}, AR{item["ratio_address"]},'
-                           f' CM{item["contact_match"]}, HCC{item["hiring_client_count"]}, M[{item["modules"]}]')
+                           f' --> CR{item.get("ratio_company", 0)}, AR{item.get("ratio_address", 0)},'
+                           f' CM{item.get("contact_match", False)}, HCC{item.get("hiring_client_count", 0)}, M[{item.get("modules", "")}]')
 
             # Prepare final row
             match_data = []
