@@ -483,7 +483,7 @@ function App() {
                         <div className="bg-slate-900 rounded-xl p-4 border border-slate-700">
                           <p className="text-sm text-slate-400 flex items-center">
                             <Settings className="h-4 w-4 mr-2 text-slate-500" />
-                            Using optimized matching thresholds: Company 75%, Address 85%
+                            Using dynamic matching thresholds that adapt based on data completeness
                           </p>
                         </div>
 
