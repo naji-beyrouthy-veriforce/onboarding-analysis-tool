@@ -370,12 +370,20 @@ def launch_services(project_root):
         return processes
     
     try:
-        frontend_process = subprocess.Popen(
-            [npm_cmd, "run", "dev"],
-            cwd=frontend_dir,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
-            shell=True  # Use shell on Windows for npm.cmd
-        )
+        # On Windows, use shell=True and let npm handle the script execution
+        # This ensures npm can find vite in node_modules/.bin
+        if sys.platform == "win32":
+            frontend_process = subprocess.Popen(
+                f'"{npm_cmd}" run dev',
+                cwd=frontend_dir,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                shell=True
+            )
+        else:
+            frontend_process = subprocess.Popen(
+                [npm_cmd, "run", "dev"],
+                cwd=frontend_dir
+            )
         processes.append(("Frontend", frontend_process))
         print_success(f"Frontend started (PID: {frontend_process.pid})")
         print("   Frontend will be available at: http://localhost:5173")
