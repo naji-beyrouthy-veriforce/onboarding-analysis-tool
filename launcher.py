@@ -232,10 +232,14 @@ def setup_backend(project_root):
     backend_dir = project_root / "backend"
     os.chdir(backend_dir)
     
-    # Create required directories
+    # Create required directories in both root and backend
     print("Creating required directories...")
+    # Backend directories
     for dir_name in ["uploads", "outputs", "data"]:
         (backend_dir / dir_name).mkdir(exist_ok=True)
+    # Root level directories (for legacy compatibility)
+    for dir_name in ["uploads", "outputs"]:
+        (project_root / dir_name).mkdir(exist_ok=True)
     print_success("Directories created")
     
     # Check and install Python dependencies
