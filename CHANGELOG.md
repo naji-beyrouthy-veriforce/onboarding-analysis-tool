@@ -2,6 +2,23 @@
 
 All notable changes to the Onboarding Analysis Tool.
 
+## [2.1.1] - 2026-02-05
+
+### 🐛 Critical Bug Fix
+
+#### Country Comparison Case-Sensitivity Bug
+- **FIXED**: Country matching was case-sensitive, causing legitimate matches to be skipped
+- **Issue**: HC data had mixed-case countries ("Ca", "Us") while CBX data had uppercase ("CA", "US")
+- **Impact**: 15+ confirmed cases failed to match despite meeting all other criteria (company name, address, email)
+- **Solution**: Changed country comparison from `cbx_country != hc_country` to `str(cbx_country).strip().upper() != str(hc_country).strip().upper()`
+- **Files Modified**: `backend/main.py` (lines 600 and 622)
+- **Test Cases**: 
+  - Safety-Kleen (82682): 77% company + 89% address → Now matches via Condition 2
+  - Lucien Vanier (23213): 79% company + 100% address → Now matches via Condition 2
+  - Navada Ltée (9057): 100% company + 100% address → Now matches via Condition 1
+  - Mason Lift (9724): 53% company + email match → Now matches via Condition 6
+- **⚠️ IMPORTANT**: Backend server restart required for fix to take effect
+
 ## [2.1.0] - 2025-12-10
 
 ### 🚀 Performance & Accuracy Improvements

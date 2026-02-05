@@ -541,6 +541,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             matches = []
             hc_company = hc_row[HC_COMPANY]
             clean_hc_company = clean_company_name(hc_company)
+            
             # Normalize email (legacy behavior)
             hc_email = str(hc_row[HC_EMAIL]).lower()
             hc_email = hc_email.split(';')[0]
@@ -551,7 +552,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             hc_zip = str(hc_row[HC_ZIP] if hc_row[HC_ZIP] else '').replace(' ', '').upper()
             hc_address = str(hc_row[HC_STREET] if hc_row[HC_STREET] else '').lower().replace('.', '').strip()
             hc_force_cbx = str(hc_row[HC_FORCE_CBX_ID] if hc_row[HC_FORCE_CBX_ID] else '')
-
+            
             # Determine data completeness to dynamically adjust matching thresholds
             has_company = bool(hc_company and len(clean_hc_company) >= 3)
             has_address = bool(hc_address and hc_zip)
@@ -586,7 +587,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                     # Very incomplete data
                     min_company_ratio = 40.0
                     min_address_ratio = 0.0
-
+            
             if not smart_boolean(hc_row[HC_DO_NOT_MATCH]):
                 if hc_force_cbx:
                     cbx_row = next((x for x in cbx_data if str(x[CBX_ID]).strip() == hc_force_cbx), None)
@@ -594,10 +595,11 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                         matches.append(add_analysis_data(hc_row, cbx_row))
                 else:
                     hc_country = hc_row[HC_COUNTRY]
+                    
                     for cbx_row in cbx_data:
                         # EARLY EXIT: Skip entirely if countries don't match (fastest check)
-                        # Only compare countries if BOTH are non-empty
-                        if hc_country and cbx_row[CBX_COUNTRY] and cbx_row[CBX_COUNTRY] != hc_country:
+                        # Only compare countries if BOTH are non-empty (case-insensitive comparison)
+                        if hc_country and cbx_row[CBX_COUNTRY] and str(cbx_row[CBX_COUNTRY]).strip().upper() != str(hc_country).strip().upper():
                             continue
                         
                         # Use pre-normalized data (indexes 28-34)
@@ -618,8 +620,8 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                         else:
                             contact_match = False
 
-                        # Address ratio calculation - only check country if BOTH have countries
-                        if hc_country and cbx_row[CBX_COUNTRY] and cbx_row[CBX_COUNTRY] != hc_country:
+                        # Address ratio calculation - only check country if BOTH have countries (case-insensitive)
+                        if hc_country and cbx_row[CBX_COUNTRY] and str(cbx_row[CBX_COUNTRY]).strip().upper() != str(hc_country).strip().upper():
                             ratio_zip = ratio_address = 0.0
                         elif not hc_address or not cbx_address:
                             ratio_zip = ratio_address = 0.0
@@ -666,6 +668,10 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                                 elif ratio_address >= min_address_ratio:
                                     # Perfect name + good address = likely same company despite email change
                                     matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
+                                else:
+                                    # Domains don't match AND address is poor, but 100% company name is still very strong signal
+                                    # Match anyway - perfect company name match is reliable even without email/address validation
+                                    matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
                             else:
                                 # At least one email is missing - match based on company name alone
                                 matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
@@ -708,7 +714,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             
             # Filter out unusable entries
             matches = [m for m in matches if 'DO NOT USE' not in str(m['company']).upper()]
-
+            
             # Check if any matches have meaningful address data (used for filtering logic)
             has_any_address = any((m.get('ratio_address') or 0) > 0 for m in matches)
 
@@ -726,9 +732,10 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                     # No address data: use 80% company threshold (matches dynamic threshold)
                     high_confidence_matches = [m for m in matches if (m.get('ratio_company') or 0) >= 80]
                 else:
-                    # Have address data: use stricter thresholds (95% company OR 85% company + 85% address)
+                    # Have address data: use thresholds that match or are lower than matching conditions
+                    # Changed from 85%+85% to 75%+85% to match Condition 2 threshold
                     high_confidence_matches = [m for m in matches if (m.get('ratio_company') or 0) >= 95 or 
-                                              ((m.get('ratio_company') or 0) >= 85 and (m.get('ratio_address') or 0) >= 85)]
+                                              ((m.get('ratio_company') or 0) >= 75 and (m.get('ratio_address') or 0) >= 85)]
                 
                 # Combine and deduplicate by cbx_id
                 seen_ids = set()
@@ -820,6 +827,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                     subscription_upgrade = True
                     prorated_upgrade_price = upgrade_price
             else:
+                # No matches found - extend with empty values
                 hc_row.extend(['' for x in range(len(analysis_headers) - 6)])
 
             create_in_cognibox = False if len(uniques_cbx_id) and not hc_row[HC_AMBIGUOUS] else True
