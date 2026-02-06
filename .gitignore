@@ -19,8 +19,12 @@ package-lock.json
 # Application specific
 backend/uploads/
 backend/outputs/
+outputs/
 backend/data/*.csv
 backend/.env
+
+# AI documentation (local only)
+ai_agent_documentation/
 
 # Build artifacts
 build/

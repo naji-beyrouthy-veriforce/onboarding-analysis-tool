@@ -417,6 +417,48 @@ python test_integration.py
 - File format (CSV faster than Excel)
 - System resources (CPU, RAM)
 
+## 🤖 AI Agent Memory System
+
+This project includes a comprehensive **AI Agent Memory System** to help maintain code quality and prevent errors when using AI assistants (GitHub Copilot, ChatGPT, Claude, etc.) for development.
+
+### Key Files
+
+All AI agent documentation is located in the **`ai_agent_documentation/`** folder:
+
+- **[AI_AGENT_README.md](ai_agent_documentation/AI_AGENT_README.md)** - Start here! Overview of the entire system
+- **[PROJECT_CONTEXT.md](ai_agent_documentation/PROJECT_CONTEXT.md)** - Complete project knowledge base (architecture, logic, data structures)
+- **[DEVELOPMENT_GUIDELINES.md](ai_agent_documentation/DEVELOPMENT_GUIDELINES.md)** - Safe coding practices and change management
+- **[AI_AGENT_INSTRUCTIONS.md](ai_agent_documentation/AI_AGENT_INSTRUCTIONS.md)** - Quick reference for AI assistants
+- **[AI_AGENT_TEST_CHECKLIST.md](ai_agent_documentation/AI_AGENT_TEST_CHECKLIST.md)** - Testing and validation guide
+- **[AI_AGENT_QUICK_START.md](ai_agent_documentation/AI_AGENT_QUICK_START.md)** - 1-page quick reference
+- **[DOCUMENTATION_INDEX.md](ai_agent_documentation/DOCUMENTATION_INDEX.md)** - Navigation hub
+
+### Why This Matters
+
+The matching algorithm is **complex and battle-tested**. Making changes without full context can introduce subtle bugs that are hard to detect. These files ensure:
+
+✅ **AI understands the system before making changes**  
+✅ **Common mistakes are prevented**  
+✅ **Code quality remains high**  
+✅ **Knowledge is preserved** (not just in developers' heads)  
+✅ **Onboarding is faster** for new team members  
+
+### How to Use
+
+**For developers using AI assistance:**
+```
+"Read ai_agent_documentation/PROJECT_CONTEXT.md and help me add a new matching condition for..."
+"Following ai_agent_documentation/DEVELOPMENT_GUIDELINES.md, review this code change..."
+"Using ai_agent_documentation/AI_AGENT_INSTRUCTIONS.md template, propose an optimization for..."
+```
+
+**For code reviews:**
+- Check changes against golden rules in DEVELOPMENT_GUIDELINES.md
+- Verify safety patterns from PROJECT_CONTEXT.md
+- Ensure documentation is updated
+
+**Learn more:** All AI documentation is in the `ai_agent_documentation/` folder
+
 ## 🔐 Security Considerations
 
 - Files are stored temporarily in `uploads/` folder
@@ -450,10 +492,20 @@ Potential future enhancements:
 - [ ] Export to multiple formats (CSV, JSON)
 - [ ] Advanced filtering and search in results
 - [ ] Audit trail and logging
+- [ ] Interactive AI-powered matching tuning assistant
+
+## 🙏 Acknowledgments
+
+- **AI Agent Memory System**: Comprehensive documentation system for safe AI-assisted development
+- **RapidFuzz/FuzzyWuzzy**: Powerful fuzzy string matching library
+- **FastAPI**: Modern, fast web framework for building APIs
+- **React + Vite**: Fast, modern frontend development experience
+- **OpenPyXL**: Excellent Excel file manipulation
 
 ---
 
-**Version:** 2.0  
-**Last Updated:** November 2025  
-**Status:** Production Ready ✅
+**Version:** 2.1  
+**Last Updated:** February 2026  
+**Status:** Production Ready ✅  
+**AI-Assisted Development**: Enabled 🤖
 
