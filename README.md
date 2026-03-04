@@ -1,42 +1,39 @@
-# Onboarding Analysis Tool v2.0
+# Onboarding Analysis Tool
 
 ## 📋 Overview
 
-The **Onboarding Analysis Tool** is a powerful web application designed to match contractor records between Cognibox (CBX) database and Hiring Client (HC) submissions using advanced fuzzy matching algorithms. Built with React + FastAPI, it provides real-time progress tracking and generates comprehensive Excel reports.
+The **Onboarding Analysis Tool** is a web application for matching contractor records between the Cognibox (CBX) database and Hiring Client (HC) submissions. Built with React + FastAPI, it uses a battle-tested, **adaptive fuzzy matching engine** to find matches with precision, provides real-time progress tracking, and generates comprehensive multi-sheet Excel reports categorized by business action.
 
 ## ✨ Key Features
 
-### 🔍 **Intelligent Matching**
-- **Fuzzy string matching** for company names (English/French support) with rapidfuzz/fuzzywuzzy
-- **Address validation** with postal code comparison and smart empty address handling
-- **Email domain matching** (corporate vs. personal email detection)
-- **Perfect match validation** - 100% company matches require email domain verification
-- **Historical name tracking** (matches against previous company names)
-- **Contact verification** with exact email priority matching
-- **Generic domain filtering** (yahoo, gmail, hotmail, etc.)
-- **Pre-normalized data caching** for 5-10x performance improvement
+### 🔍 **Adaptive Matching Engine**
+- **Dynamic thresholds** — matching sensitivity adjusts per-row based on data completeness (company name, address, email availability)
+- **Fuzzy string matching** for company names (English/French) using RapidFuzz/FuzzyWuzzy
+- **Historical name support** — matches against previous company names stored in CBX
+- **Address validation** with postal code comparison and smart empty-address handling
+- **Email domain matching** — corporate domains matched at domain level; personal domains (gmail, yahoo, etc.) require exact email match
+- **Perfect-match guard** — 100% company name match requires email domain verification to prevent false positives
+- **Pre-normalized data caching** — CBX data cleaned once before matching loop for 5-10x speed improvement
 - **Pre-compiled regex patterns** for optimal string processing
 
 ### ⚡ **Real-Time Monitoring**
-- **Live progress bar** with percentage completion (0-100%)
-- **Timer display** showing elapsed processing time
-- **Record counter** (processed/total)
-- **Live console logs** with color-coded messages
-- **Background processing** with async job tracking
+- Live progress bar with percentage completion (0–100%)
+- Elapsed timer and processed/total record counter
+- Color-coded live console with categorized log messages
+- Background job processing with async status polling
 
 ### 📊 **Comprehensive Reports**
-- **Excel output** with 12+ categorized sheets
-- **Action-based filtering** (onboarding, re-onboarding, etc.)
-- **Match analysis** with ratio scores
-- **Subscription upgrade calculations**
-- **Metadata preservation** from source files
+- Excel output with **14 categorized sheets**
+- Action-based filtering (onboarding, re-onboarding, follow-up, etc.)
+- Match ratio scores (company, address) per row
+- Subscription upgrade calculations
+- Full metadata preservation from source files
 
 ### 🎨 **Modern UI/UX**
-- Beautiful gradient design with purple/blue theme
+- Gradient design with purple/blue theme
 - Responsive layout for all screen sizes
-- Animated transitions and smooth interactions
-- Terminal-style live console
-- Dashboard with statistics
+- Animated transitions and terminal-style live console
+- Dashboard with processing statistics
 
 ## 🏗️ Architecture
 
@@ -48,7 +45,6 @@ Frontend (React + Vite)          Backend (FastAPI + Python)
 │  Live Console       │◀────────│  Matching Engine        │
 │  Download Manager   │◀────────│  Excel Generator        │
 └─────────────────────┘         └─────────────────────────┘
-         │                                   │
          │                                   │
     Port 5173                           Port 8000
 ```
@@ -64,8 +60,8 @@ Frontend (React + Vite)          Backend (FastAPI + Python)
 
 **1. Clone the repository**
 ```bash
-git clone <repository-url>
-cd onboarding_analysis_tool_version_2.0
+git clone https://github.com/naji-beyrouthy-veriforce/onboarding-analysis-tool.git
+cd onboarding-analysis-tool
 ```
 
 **2. Install backend dependencies**
@@ -82,36 +78,29 @@ npm install
 
 ### Running the Application
 
-#### Option 1: Quick Start (Two Terminals)
+#### Option 1: Two Terminals
 
-**Terminal 1 - Backend:**
+**Terminal 1 — Backend:**
 ```bash
 cd backend
-python3 main.py
+python main.py
 ```
 ✅ Backend starts at `http://localhost:8000`
 
-**Terminal 2 - Frontend:**
+**Terminal 2 — Frontend:**
 ```bash
 cd frontend
 npm run dev
 ```
 ✅ Frontend starts at `http://localhost:5173`
 
-**Open browser:** Navigate to `http://localhost:5173`
+Open your browser at `http://localhost:5173`.
 
-#### Option 2: Using Scripts (Linux/WSL)
+#### Option 2: Scripts (Linux/WSL/Mac)
 
-**Start backend:**
 ```bash
-cd backend
-./start.sh
-```
-
-**Restart backend:**
-```bash
-cd backend
-./restart.sh
+cd backend && ./start.sh       # Start backend
+cd backend && ./restart.sh     # Restart backend
 ```
 
 ## 📖 How to Use
@@ -151,321 +140,259 @@ cd backend
 
 ### Step 2: Upload and Process
 
-1. **Open the application** at `http://localhost:5173`
-2. **Click "Upload" tab**
-3. **Select CBX file** (drag & drop or click to browse)
-4. **Select HC file** (drag & drop or click to browse)
-5. **Click "Start Matching"** button
-6. **Monitor progress:**
-   - Progress bar shows completion percentage
-   - Timer shows elapsed time
-   - Counter shows records processed
-   - Console displays detailed logs
+1. Open the application at `http://localhost:5173`
+2. Click the **"Upload"** tab
+3. Select your **CBX file** (drag & drop or click to browse)
+4. Select your **HC file**
+5. Click **"Start Matching"**
+6. Monitor live progress: bar, timer, counter, and console logs
 
 ### Step 3: Download Results
 
-1. Wait for **"Processing Complete!"** status
-2. Click **"Download Results"** button
-3. Open the Excel file in your preferred application
+1. Wait for **"Processing Complete!"**
+2. Click **"Download Results"**
+3. Open the Excel file
 
 ### Step 4: Analyze Results
 
-**Output Excel File Contains:**
+**Output Excel Sheets (14 total):**
 
-1. **all** - Complete dataset with all matches and analysis
-2. **onboarding** - New contractors requiring onboarding
-3. **re_onboarding** - Inactive contractors to reactivate
-4. **add_questionnaire** - Active contractors needing questionnaires
-5. **already_qualified** - Contractors already validated
-6. **follow_up_qualification** - Contractors requiring follow-up
-7. **activation_link** - Contractors needing activation
-8. **ambiguous_onboarding** - Ambiguous matches requiring review
-9. **association_fee** - Contractors requiring association fees
-10. **subscription_upgrade** - Contractors requiring plan upgrades
-11. **restore_suspended** - Suspended accounts to restore
-12. **missing_info** - Incomplete submissions
+| # | Sheet | Description |
+|---|-------|-------------|
+| 1 | **all** | Complete dataset — all matches and analysis |
+| 2 | **onboarding** | New contractors requiring onboarding |
+| 3 | **re_onboarding** | Inactive contractors to reactivate |
+| 4 | **add_questionnaire** | Active contractors needing questionnaires |
+| 5 | **already_qualified** | Contractors already validated |
+| 6 | **follow_up_qualification** | Contractors requiring follow-up |
+| 7 | **activation_link** | Contractors needing activation |
+| 8 | **ambiguous_onboarding** | Ambiguous matches requiring manual review |
+| 9 | **association_fee** | Contractors requiring association fees |
+| 10 | **subscription_upgrade** | Contractors requiring plan upgrades |
+| 11 | **restore_suspended** | Suspended accounts to restore |
+| 12 | **missing_info** | Incomplete submissions |
+| 13 | **do_not_match** | Rows flagged to skip matching |
+| 14 | **force_cbx_id** | Rows with a forced CBX ID override |
 
 **Key Columns in Output:**
-- `cbx_id` - Matched Cognibox ID (blank if new)
-- `analysis` - Detailed match information with scores
-- `ratio_company` - Company name match score (0-100)
-- `ratio_address` - Address match score (0-100)
-- `contact_match` - Email/contact match (TRUE/FALSE)
-- `action` - Recommended action
-- `create_in_cbx` - Whether to create new record
-- `is_subscription_upgrade` - Upgrade required
-- `match_count` - Number of potential matches found
+- `cbx_id` — Matched Cognibox ID (blank if new)
+- `analysis` — Detailed match info with scores
+- `ratio_company` — Company name match score (0–100)
+- `ratio_address` — Address match score (0–100)
+- `contact_match` — Email/contact match (TRUE/FALSE)
+- `action` — Recommended business action
+- `create_in_cbx` — Whether to create a new record
+- `is_subscription_upgrade` — Upgrade required flag
+- `match_count` — Number of potential matches found
 
-## 🔧 Configuration
+## 🔧 Matching Algorithm
 
-### Matching Algorithm
+### Adaptive Threshold Strategy
 
-The tool uses **legacy-tested matching logic** with the following rules:
+Matching thresholds are **dynamically calculated per HC row** based on data availability — not fixed globally. This is the core design principle.
 
-**Company Name Matching:**
-- Compares against both French and English names
-- Checks historical/previous names
-- Removes generic words (inc, ltd, construction, etc.)
-- Uses fuzzy token sort ratio
-- **Default threshold: 80%**
+| Data Available | Company Threshold | Address Threshold | Strategy |
+|----------------|-------------------|-------------------|----------|
+| Company + Address + Email | 75% | 85% | Strict dual-signal validation |
+| Company + Email (no address) | 60% | 0% | Email compensates for missing address |
+| Company + Address (no email) | 65% | 70% | Balanced dual-signal |
+| Company Only | 80% | 0% | High bar, single signal |
+| Very Incomplete | 40% | 0% | Wide net to avoid missing matches |
 
-**Address Matching:**
-- Combines street address and postal code
-- Only compares within same country
-- Uses weighted combination of address and zip ratio
-- **Default threshold: 80%**
+**Philosophy**: more data → stricter thresholds (minimize false positives). Less data → lenient thresholds (maximize recall).
 
-**Email Matching:**
-- For generic domains (gmail, yahoo, etc.): exact email match required
-- For corporate domains: domain-level match accepted
-- Helps avoid false positives
+### Matching Conditions (Priority Order)
 
-**Priority Rules:**
-1. Forced matches (if `force_cbx_id` provided)
-2. Contact matches (email/domain)
-3. High company name ratio (≥95%) regardless of address
-4. Combined company + address threshold match
-5. Matches with hiring client relationship
-6. Active registration status preferred
-7. Higher module count preferred
+All conditions are **mutually exclusive** (`if/elif` chain — first match wins):
 
-### Custom Configuration
+```
+1. ratio_company == 100% + email domain match
+2. ratio_company ≥ dynamic_threshold + ratio_address ≥ dynamic_threshold  ← PRIMARY
+3. ratio_address == 100% + ratio_company ≥ 70%
+4. ratio_company ≥ 95% (address ignored)
+5. ratio_company ≥ 85% + contact_match + both addresses empty
+6. contact_match + ratio_company ≥ 33%
+7. exact same email + ratio_company ≥ 20%
+```
 
-The matching thresholds are **hardcoded to legacy defaults (80/80)** for consistency with historical processing. These values have been tested and validated across thousands of contractor records.
+### Company Name Cleaning Pipeline
 
-### Performance Optimization (v2.1.0+)
+Names are pre-normalized before matching (order matters):
+1. Lowercase
+2. Remove periods and commas
+3. Remove parentheses and content inside
+4. Strip generic words: `construction`, `ltd`, `inc`, `services`, `solutions`, `llc`, etc.
+5. Collapse whitespace
 
-The tool includes several performance optimizations:
+### Email Matching
 
-**Pre-normalization**
-- CBX data is pre-normalized once at load time
-- Cleaned company names and addresses cached in memory (indexes 28-30)
-- Eliminates millions of redundant string operations
-- **5-10x speed improvement** for large datasets
+- **Generic domains** (gmail, yahoo, hotmail, outlook, etc.) → exact full email required
+- **Corporate domains** → email domain match is sufficient
 
-**Regex Pre-compilation**
-- Generic word removal patterns compiled once at startup
-- Reused across all matching operations
-- **~10x faster** than dynamic regex compilation
+### Action Assignment
 
-**Optional rapidfuzz**
-- Install `pip install rapidfuzz` for C-based fuzzy matching
-- Automatic fallback to fuzzywuzzy if not available
-- **2-3x additional speed boost** when installed
-
-**Expected Processing Times:**
-- 100 contractors × 10,000 CBX records: ~30 seconds (with rapidfuzz)
-- 1,000 contractors × 60,000 CBX records: ~5-8 minutes (with all optimizations)
-- Performance scales linearly with record count
+The `action` field is derived by a decision tree based on `create_in_cbx`, `is_take_over`, CBX registration status (`Active`, `Suspended`, `Non Member`), HC relationship, qualification status, and subscription data. See [`ai_agent_documentation/PROJECT_CONTEXT.md`](ai_agent_documentation/PROJECT_CONTEXT.md) for the full decision tree.
 
 ## 🛠️ Development
 
 ### Backend Structure
 
-```python
+```
 backend/
-├── main.py                 # Main FastAPI application
+├── main.py                 # Main FastAPI app — all matching logic (~1100 lines)
 ├── convertTimeZone.py      # Timezone conversion utilities
 ├── requirements.txt        # Python dependencies
-├── uploads/               # Temporary file storage
-└── outputs/               # Generated Excel files
+├── uploads/                # Temporary upload storage (auto-cleaned)
+├── outputs/                # Generated Excel files
+├── data/                   # Current job data files
+├── testdata/               # Sample CBX and HC files for testing
+└── legacy/                 # Legacy script versions (reference only)
 ```
 
 **Key Dependencies:**
-- `fastapi` - Web framework
-- `uvicorn` - ASGI server
-- `openpyxl` - Excel file handling
-- `fuzzywuzzy` - Fuzzy string matching
-- `python-Levenshtein` - Fast string comparison
+- `fastapi` + `uvicorn` — web framework and ASGI server
+- `openpyxl` — Excel file generation
+- `rapidfuzz` (preferred) / `fuzzywuzzy` — fuzzy string matching
+- `python-Levenshtein` — fast edit-distance computation
 
 ### Frontend Structure
 
-```javascript
+```
 frontend/
 ├── src/
-│   ├── App.jsx            # Main React component
-│   ├── main.jsx          # React entry point
-│   └── index.css         # Tailwind + custom styles
-├── index.html            # HTML template
-├── package.json          # Dependencies
-├── vite.config.js        # Vite configuration
-└── tailwind.config.js    # Tailwind configuration
+│   ├── App.jsx             # Main React component (~830 lines)
+│   ├── main.jsx            # React entry point
+│   └── index.css           # Tailwind + custom styles
+├── index.html
+├── package.json
+├── vite.config.js
+└── tailwind.config.js
 ```
 
 **Key Dependencies:**
-- `react` - UI framework
-- `lucide-react` - Icon library
-- `tailwindcss` - CSS framework
-- `vite` - Build tool
+- `react` 18 — UI framework
+- `lucide-react` — icon library
+- `tailwindcss` — CSS framework
+- `vite` — build tool
 
 ### API Endpoints
 
-**POST /api/match**
-- Uploads files and starts matching job
-- Returns: `job_id`, `status`, `progress`, `message`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/match` | Upload files and start matching job |
+| `GET` | `/api/jobs/{job_id}` | Get job status and progress |
+| `GET` | `/api/jobs/{job_id}/download` | Download completed Excel results |
+| `GET` | `/api/jobs` | List all jobs |
+| `GET` | `/api/health` | Health check |
 
-**GET /api/jobs/{job_id}**
-- Retrieves job status
-- Returns: Current progress, status, message, errors
+## 📊 Performance
 
-**GET /api/jobs/{job_id}/download**
-- Downloads completed Excel results
-- Returns: Excel file as attachment
+### Processing Times
 
-**GET /api/jobs**
-- Lists all jobs
-- Returns: Array of job statuses
+| Dataset | Expected Time | Memory |
+|---------|---------------|--------|
+| 100 HC × 1,000 CBX | 5–10 seconds | ~50–100 MB |
+| 1,000 HC × 5,000 CBX | 1–2 minutes | ~200–500 MB |
+| 10,000 HC × 10,000 CBX | 20–30 minutes | ~1–2 GB |
 
-**GET /api/health**
-- Health check endpoint
-- Returns: System status
+*Times assume RapidFuzz and pre-normalization are active.*
+
+### Performance Optimizations (v2.1.0)
+
+- **CBX pre-normalization** — company names, addresses, email domains, and ZIP codes computed once and cached at indexes 28–34 of each CBX row. Never recomputed inside the O(N×M) matching loop.
+- **Regex pre-compilation** — generic word patterns compiled at startup, reused across all calls (~10× faster than in-loop compilation).
+- **RapidFuzz** — C-based fuzzy matching, automatic fallback to fuzzywuzzy if not installed (2–3× faster).
+- **Early exit** — country mismatch check skips expensive fuzzy operations immediately.
 
 ## 🐛 Troubleshooting
 
 ### Backend Issues
 
-**Problem:** `ModuleNotFoundError: No module named 'fastapi'`
+**`ModuleNotFoundError: No module named 'fastapi'`**
 ```bash
-cd backend
-pip install -r requirements.txt
+cd backend && pip install -r requirements.txt
 ```
 
-**Problem:** Port 8000 already in use
+**Port 8000 already in use (Linux/Mac)**
 ```bash
-# Find and kill process on port 8000
-lsof -i :8000
-kill -9 <PID>
+lsof -i :8000 && kill -9 <PID>
 ```
 
-**Problem:** Permission denied on start.sh
+**Port 8000 already in use (Windows)**
+```powershell
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+```
+
+**Permission denied on shell scripts**
 ```bash
-chmod +x start.sh restart.sh
+chmod +x backend/start.sh backend/restart.sh
 ```
 
 ### Frontend Issues
 
-**Problem:** `ECONNREFUSED` backend connection error
-- Ensure backend is running on port 8000
-- Check CORS is enabled in backend
+**`ECONNREFUSED` — backend not reachable**
+- Confirm backend is running on port 8000
+- Verify CORS is enabled in `backend/main.py`
 
-**Problem:** Files not uploading
-- Check file size limits (backend default: unlimited)
-- Verify file format (CSV, XLSX, XLS)
+**Files not uploading**
+- Confirm file format is CSV, XLSX, or XLS
 - Check browser console for errors
 
-**Problem:** Progress stuck at 0%
-- Check backend logs for processing errors
+**Progress stuck at 0%**
+- Check backend terminal for processing errors
 - Verify file headers match expected format
-- Check backend console output
 
 ### Common Data Issues
 
-**Problem:** No matches found
-- Verify file formats match expected headers
-- Check for encoding issues (use UTF-8)
-- Review company name cleaning logic
+**No matches found**
+- Check file encoding (UTF-8 recommended)
+- Verify column headers match expected names exactly
+- Inspect company name normalization output in logs
 
-**Problem:** Too many matches
-- Increase matching thresholds (requires code change)
-- Add more generic company words to filter
+**Too many false matches**
+- Review data for missing addresses/emails (low-data rows use lenient thresholds by design)
+- Check for overly generic company names that survive the cleaning pipeline
 
-**Problem:** Incorrect actions assigned
-- Review business logic in `action()` function
-- Check registration status values
-- Verify subscription pricing data
+**Incorrect actions assigned**
+- Check `registration_code` values (Active, Suspended, Non Member)
+- Verify `is_take_over`, `ambiguous`, and HC relationship fields
 
-## 📝 Testing
+## 🤖 AI Agent Documentation
 
-### Manual Testing
-
-**1. Test with sample data:**
-```bash
-cd backend/testdata
-# Use cbx.csv and hc.csv for testing
-```
-
-**2. Run diagnostic test:**
-```bash
-cd backend
-python test_diagnostic.py
-```
-
-**3. Check background processing:**
-```bash
-cd backend
-python test_background.py
-```
-
-### Integration Testing
-
-```bash
-cd backend
-python test_integration.py
-```
-
-## 📊 Performance
-
-**Typical Processing Times:**
-- 100 contractors: ~30-60 seconds
-- 500 contractors: ~2-5 minutes
-- 1000 contractors: ~5-10 minutes
-- 5000 contractors: ~25-50 minutes
-
-**Factors Affecting Speed:**
-- Number of CBX records (larger database = slower)
-- Number of HC records to process
-- File format (CSV faster than Excel)
-- System resources (CPU, RAM)
-
-## 🤖 AI Agent Memory System
-
-This project includes a comprehensive **AI Agent Memory System** to help maintain code quality and prevent errors when using AI assistants (GitHub Copilot, ChatGPT, Claude, etc.) for development.
+This project maintains a structured **AI Agent Memory System** to preserve critical business logic and ensure safe AI-assisted development.
 
 ### Key Files
 
-All AI agent documentation is located in the **`ai_agent_documentation/`** folder:
+Located in the **`ai_agent_documentation/`** folder:
 
-- **[AI_AGENT_README.md](ai_agent_documentation/AI_AGENT_README.md)** - Start here! Overview of the entire system
-- **[PROJECT_CONTEXT.md](ai_agent_documentation/PROJECT_CONTEXT.md)** - Complete project knowledge base (architecture, logic, data structures)
-- **[DEVELOPMENT_GUIDELINES.md](ai_agent_documentation/DEVELOPMENT_GUIDELINES.md)** - Safe coding practices and change management
-- **[AI_AGENT_INSTRUCTIONS.md](ai_agent_documentation/AI_AGENT_INSTRUCTIONS.md)** - Quick reference for AI assistants
-- **[AI_AGENT_TEST_CHECKLIST.md](ai_agent_documentation/AI_AGENT_TEST_CHECKLIST.md)** - Testing and validation guide
-- **[AI_AGENT_QUICK_START.md](ai_agent_documentation/AI_AGENT_QUICK_START.md)** - 1-page quick reference
-- **[DOCUMENTATION_INDEX.md](ai_agent_documentation/DOCUMENTATION_INDEX.md)** - Navigation hub
+| File | Purpose |
+|------|---------|
+| [PROJECT_CONTEXT.md](ai_agent_documentation/PROJECT_CONTEXT.md) | Complete knowledge base: architecture, matching logic, data structures, business rules, action decision tree |
+| [DEVELOPMENT_GUIDELINES.md](ai_agent_documentation/DEVELOPMENT_GUIDELINES.md) | Golden rules, safe coding patterns, change management, testing checklists, debugging guide |
 
-### Why This Matters
+### Why It Matters
 
-The matching algorithm is **complex and battle-tested**. Making changes without full context can introduce subtle bugs that are hard to detect. These files ensure:
+The matching algorithm is **battle-tested across production data**. Without full context, AI-assisted changes can introduce subtle bugs (e.g., duplicate matches from broken mutual exclusivity, performance regression from in-loop computation). These files ensure:
 
-✅ **AI understands the system before making changes**  
-✅ **Common mistakes are prevented**  
-✅ **Code quality remains high**  
-✅ **Knowledge is preserved** (not just in developers' heads)  
-✅ **Onboarding is faster** for new team members  
+- ✅ Critical logic is never accidentally changed
+- ✅ Safe patterns (null checks, index bounds, mutual exclusivity) are followed
+- ✅ Performance characteristics are preserved
+- ✅ Knowledge survives team changes
 
-### How to Use
+### How to Use with AI Assistants
 
-**For developers using AI assistance:**
 ```
-"Read ai_agent_documentation/PROJECT_CONTEXT.md and help me add a new matching condition for..."
-"Following ai_agent_documentation/DEVELOPMENT_GUIDELINES.md, review this code change..."
-"Using ai_agent_documentation/AI_AGENT_INSTRUCTIONS.md template, propose an optimization for..."
+"Read ai_agent_documentation/PROJECT_CONTEXT.md, then help me add a new matching condition for..."
+"Following ai_agent_documentation/DEVELOPMENT_GUIDELINES.md, review this proposed change to main.py..."
 ```
-
-**For code reviews:**
-- Check changes against golden rules in DEVELOPMENT_GUIDELINES.md
-- Verify safety patterns from PROJECT_CONTEXT.md
-- Ensure documentation is updated
-
-**Learn more:** All AI documentation is in the `ai_agent_documentation/` folder
 
 ## 🔐 Security Considerations
 
-- Files are stored temporarily in `uploads/` folder
-- Results stored in `outputs/` folder
-- No authentication implemented (internal use only)
-- Sensitive data should not be committed to git
-- Use `.gitignore` to exclude data files
+- Uploaded files are stored temporarily in `uploads/` and should be cleaned periodically
+- Results are stored in `outputs/`
+- No authentication is implemented (designed for internal/trusted network use)
+- Do not commit data files — use `.gitignore` to exclude `uploads/`, `outputs/`, and `data/`
 
 ## 📄 License
 
@@ -473,39 +400,33 @@ Internal use only. All rights reserved.
 
 ## 👥 Support
 
-For issues, questions, or feature requests:
-1. Check TROUBLESHOOTING.md
+1. Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 2. Review backend logs in `backend.log`
 3. Check browser console for frontend errors
-4. Contact development team
+4. Consult [ai_agent_documentation/PROJECT_CONTEXT.md](ai_agent_documentation/PROJECT_CONTEXT.md) for logic questions
 
 ## 🗺️ Roadmap
 
-Potential future enhancements:
+- [ ] Configurable matching thresholds via UI
 - [ ] User authentication and multi-tenancy
 - [ ] Database storage for job history
-- [ ] Configurable matching thresholds via UI
-- [ ] Batch processing queue
 - [ ] Email notifications on completion
-- [ ] API rate limiting
 - [ ] Docker containerization
-- [ ] Export to multiple formats (CSV, JSON)
-- [ ] Advanced filtering and search in results
-- [ ] Audit trail and logging
-- [ ] Interactive AI-powered matching tuning assistant
+- [ ] Export to CSV/JSON in addition to Excel
+- [ ] Batch processing queue for large volumes
+- [ ] Audit trail and per-row match explanation log
 
 ## 🙏 Acknowledgments
 
-- **AI Agent Memory System**: Comprehensive documentation system for safe AI-assisted development
-- **RapidFuzz/FuzzyWuzzy**: Powerful fuzzy string matching library
-- **FastAPI**: Modern, fast web framework for building APIs
-- **React + Vite**: Fast, modern frontend development experience
-- **OpenPyXL**: Excellent Excel file manipulation
+- **RapidFuzz / FuzzyWuzzy** — fuzzy string matching
+- **FastAPI** — modern Python web framework
+- **React + Vite** — fast frontend development
+- **OpenPyXL** — Excel generation
 
 ---
 
-**Version:** 2.1  
-**Last Updated:** February 2026  
-**Status:** Production Ready ✅  
-**AI-Assisted Development**: Enabled 🤖
+**Version:** 2.1.0
+**Last Updated:** March 2026
+**Status:** Production Ready ✅
+**Repository:** https://github.com/naji-beyrouthy-veriforce/onboarding-analysis-tool
 
