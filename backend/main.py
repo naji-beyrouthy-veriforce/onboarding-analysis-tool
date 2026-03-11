@@ -747,12 +747,18 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             has_any_address = any((m.get('ratio_address') or 0) > 0 for m in matches)
 
             # Filter 1: Prioritize hiring client relationships
+            # Only apply when hc_name is non-empty — empty hc_name would falsely match
+            # CBX entries with empty hiring_client_names ('' == '' is always True)
             hc_name = str(hc_row[HC_HIRING_CLIENT_NAME]).strip().lower()
-            def has_hc_name(m):
-                names = str(m.get('hiring_client_names', '')).lower().split(';')
-                return any(hc_name == n.strip() for n in names)
+            if hc_name:
+                def has_hc_name(m):
+                    names = str(m.get('hiring_client_names', '')).lower().split(';')
+                    return any(hc_name == n.strip() for n in names)
 
-            hc_matches = [m for m in matches if has_hc_name(m)]
+                hc_matches = [m for m in matches if has_hc_name(m)]
+            else:
+                hc_matches = []
+
             if hc_matches:
                 # Keep hiring client matches but also include high-confidence matches
                 # This prevents losing duplicate companies without the HC relationship yet
