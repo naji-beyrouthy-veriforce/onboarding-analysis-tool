@@ -186,6 +186,59 @@ LIST_SEPARATOR = ";"
 GENERIC_DOMAIN = set(BASE_GENERIC_DOMAIN)
 GENERIC_COMPANY_NAME_WORDS = BASE_GENERIC_COMPANY_NAME_WORDS
 
+# Country name to ISO 3166-1 alpha-2 code mapping
+# Used to normalize full country names (e.g. "Canada") to ISO2 codes (e.g. "CA")
+# CBX uses ISO2 codes; HC files sometimes contain full names instead
+COUNTRY_NAME_TO_ISO2 = {
+    'canada': 'CA', 'united states': 'US', 'united states of america': 'US', 'usa': 'US',
+    'mexico': 'MX', 'brazil': 'BR', 'argentina': 'AR', 'chile': 'CL', 'colombia': 'CO',
+    'peru': 'PE', 'uruguay': 'UY', 'venezuela': 'VE', 'ecuador': 'EC', 'bolivia': 'BO',
+    'paraguay': 'PY', 'costa rica': 'CR', 'panama': 'PA', 'guatemala': 'GT',
+    'dominican republic': 'DO', 'puerto rico': 'PR', 'trinidad and tobago': 'TT',
+    'united kingdom': 'GB', 'great britain': 'GB', 'england': 'GB', 'france': 'FR',
+    'germany': 'DE', 'italy': 'IT', 'spain': 'ES', 'portugal': 'PT', 'netherlands': 'NL',
+    'belgium': 'BE', 'switzerland': 'CH', 'austria': 'AT', 'sweden': 'SE', 'norway': 'NO',
+    'denmark': 'DK', 'finland': 'FI', 'ireland': 'IE', 'poland': 'PL', 'czech republic': 'CZ',
+    'czechia': 'CZ', 'romania': 'RO', 'hungary': 'HU', 'greece': 'GR', 'turkey': 'TR',
+    'croatia': 'HR', 'slovakia': 'SK', 'slovenia': 'SI', 'bulgaria': 'BG', 'serbia': 'RS',
+    'ukraine': 'UA', 'iceland': 'IS', 'luxembourg': 'LU', 'malta': 'MT', 'cyprus': 'CY',
+    'estonia': 'EE', 'latvia': 'LV', 'lithuania': 'LT',
+    'australia': 'AU', 'new zealand': 'NZ', 'japan': 'JP', 'china': 'CN', 'india': 'IN',
+    'south korea': 'KR', 'korea': 'KR', 'taiwan': 'TW', 'singapore': 'SG', 'malaysia': 'MY',
+    'thailand': 'TH', 'indonesia': 'ID', 'philippines': 'PH', 'vietnam': 'VN',
+    'pakistan': 'PK', 'bangladesh': 'BD', 'sri lanka': 'LK', 'nepal': 'NP',
+    'united arab emirates': 'AE', 'uae': 'AE', 'saudi arabia': 'SA', 'qatar': 'QA',
+    'kuwait': 'KW', 'bahrain': 'BH', 'oman': 'OM', 'jordan': 'JO', 'lebanon': 'LB',
+    'israel': 'IL', 'iraq': 'IQ', 'iran': 'IR', 'egypt': 'EG', 'algeria': 'DZ',
+    'morocco': 'MA', 'tunisia': 'TN', 'libya': 'LY',
+    'south africa': 'ZA', 'nigeria': 'NG', 'kenya': 'KE', 'ghana': 'GH',
+    'cameroon': 'CM', 'ivory coast': 'CI', "cote d'ivoire": 'CI', 'senegal': 'SN',
+    'madagascar': 'MG', 'tanzania': 'TZ', 'zambia': 'ZM', 'zimbabwe': 'ZW',
+    'new caledonia': 'NC', 'french polynesia': 'PF', 'bermuda': 'BM', 'guyana': 'GY',
+}
+
+def normalize_country(country_value):
+    """Normalize country to ISO 3166-1 alpha-2 code.
+    
+    If the value is already a 2-letter code, returns it uppercased.
+    If it's a full country name, converts it to ISO2.
+    Returns the original value stripped/uppercased if no mapping found.
+    """
+    if not country_value:
+        return country_value
+    val = str(country_value).strip()
+    if not val:
+        return ''
+    # Already a 2-letter ISO code
+    if len(val) == 2:
+        return val.upper()
+    # Try mapping from full name
+    mapped = COUNTRY_NAME_TO_ISO2.get(val.lower())
+    if mapped:
+        return mapped
+    # Return uppercased original as fallback
+    return val.upper()
+
 # Pre-compiled regex pattern for optimal performance in remove_generics()
 GENERIC_WORDS_PATTERN = re.compile(
     r'\b(?:' + '|'.join(re.escape(word) for word in GENERIC_COMPANY_NAME_WORDS) + r')\b',
@@ -622,7 +675,11 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                     if cbx_row:
                         matches.append(add_analysis_data(hc_row, cbx_row))
                 else:
-                    hc_country = hc_row[HC_COUNTRY]
+                    hc_country_raw = hc_row[HC_COUNTRY]
+                    hc_country = normalize_country(hc_country_raw)
+                    # Log if country was normalized from a full name to ISO2
+                    if hc_country_raw and hc_country != str(hc_country_raw).strip().upper() and index < 5:
+                        logger.info(f"[{job_id}] Country normalized: '{hc_country_raw}' → '{hc_country}' (row {index+2})")
                     
                     for cbx_row in cbx_data:
                         # EARLY EXIT: Skip entirely if countries don't match (fastest check)

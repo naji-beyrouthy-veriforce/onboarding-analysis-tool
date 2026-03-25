@@ -1,6 +1,6 @@
 # 📡 API Documentation
 
-Backend API reference for the Onboarding Analysis Tool v2.0.
+Backend API reference for the Onboarding Analysis Tool v2.1.
 
 ## Base URL
 
@@ -299,16 +299,19 @@ The result Excel file contains multiple sheets:
 
 1. **all** - All records with complete analysis
 2. **onboarding** - New contractors to onboard
-3. **re_onboarding** - Inactive contractors to reactivate
-4. **add_questionnaire** - Active contractors needing questionnaires
-5. **already_qualified** - Already validated contractors
-6. **follow_up_qualification** - Contractors needing follow-up
-7. **activation_link** - Send activation links
-8. **ambiguous_onboarding** - Matches requiring review
-9. **association_fee** - Association fee required
-10. **subscription_upgrade** - Subscription upgrade needed
-11. **restore_suspended** - Suspended accounts to restore
-12. **missing_info** - Incomplete submissions
+3. **association_fee** - Association fee required
+4. **re_onboarding** - Inactive contractors to reactivate
+5. **subscription_upgrade** - Subscription upgrade needed
+6. **ambiguous_onboarding** - Matches requiring review
+7. **restore_suspended** - Suspended accounts to restore
+8. **activation_link** - Send activation links
+9. **already_qualified** - Already validated contractors
+10. **add_questionnaire** - Active contractors needing questionnaires
+11. **missing_info** - Incomplete submissions
+12. **follow_up_qualification** - Contractors needing follow-up
+13. **Data to import** - Data formatted for import into CBX
+14. **Existing Contractors** - Matched existing contractor data
+15. **Data for HS** - Data formatted for HubSpot
 
 ### Additional Columns in Output
 

@@ -28,7 +28,7 @@ If any are missing:
 ```bash
 cd ~
 # If you have the project folder, navigate to it
-cd onboarding_analysis_tool_version_2.0
+cd onboarding-analysis-tool
 ```
 
 ### Step 2: Install Backend Dependencies
@@ -69,7 +69,7 @@ added 234 packages in 15s
 
 **Terminal 1 - Start Backend:**
 ```bash
-cd ~/onboarding_analysis_tool_version_2.0/backend
+cd ~/onboarding-analysis-tool/backend
 python3 main.py
 ```
 
@@ -83,7 +83,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 
 **Terminal 2 - Start Frontend:**
 ```bash
-cd ~/onboarding_analysis_tool_version_2.0/frontend
+cd ~/onboarding-analysis-tool/frontend
 npm run dev
 ```
 

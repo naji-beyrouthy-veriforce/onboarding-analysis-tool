@@ -19,8 +19,9 @@ package-lock.json
 # Application specific
 backend/uploads/
 backend/outputs/
+uploads/
 outputs/
-backend/data/*.csv
+backend/data/
 backend/.env
 
 # AI documentation (local only)
