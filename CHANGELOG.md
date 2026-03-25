@@ -2,6 +2,19 @@
 
 All notable changes to the Onboarding Analysis Tool.
 
+## [2.1.2] - 2026-03-25
+
+### 🐛 Bug Fix
+
+#### Country Name Normalization
+- **FIXED**: HC files with full country names (e.g. "Canada", "United States") instead of ISO2 codes ("CA", "US") caused zero matches
+- **Issue**: The country early-exit check compared raw HC country against CBX ISO2 codes — "Canada" != "CA" skipped every CBX row
+- **Impact**: 100% of HC rows with full country names silently produced empty analysis (no matches, no errors)
+- **Solution**: Added `normalize_country()` function with a comprehensive ISO 3166-1 mapping (100+ countries) applied to HC country before comparison
+- **Logging**: First 5 normalized rows are logged for visibility (e.g. `Country normalized: 'Canada' → 'CA' (row 2)`)
+- **Files Modified**: `backend/main.py`
+- **Backward Compatible**: ISO2 codes pass through unchanged; only full names are converted
+
 ## [2.1.1] - 2026-02-05
 
 ### 🐛 Critical Bug Fix
@@ -27,7 +40,7 @@ Major performance optimizations and matching logic refinements based on producti
 
 #### ⚡ Performance Enhancements
 - **Pre-compiled regex patterns** for 5-10x faster generic word removal
-- **Pre-normalized CBX data** caching (indexes 28-30) eliminates redundant computations
+- **Pre-normalized CBX data** caching (indexes 28-34) eliminates redundant computations
 - **Rapidfuzz support** with automatic fallback to fuzzywuzzy (2-3x speed boost when available)
 - **Optimized string operations** with reduced function calls in hot path
 - **Expected improvement**: 5-10x faster processing for large datasets (10k+ records)
@@ -122,7 +135,7 @@ Complete rewrite of the application with modern web technologies while preservin
 - **Support for both CSV and Excel** in CBX file (legacy was CSV only)
 
 #### Output Format
-- **Excel with 12 sheets** (same as legacy, all sheets present)
+- **Excel with 15 sheets** (all action sheets plus special data sheets present)
 - **Improved column formatting** with proper widths
 - **Table styling** maintained from legacy
 - **Action-based filtering** into separate sheets
@@ -192,7 +205,7 @@ For production deployment, additional security measures required.
   - Total: ~1,500+ lines
 
 - **Features:**
-  - 12 output sheets
+  - 15 output sheets
   - 69 analysis columns
   - 6 API endpoints
   - Real-time progress tracking
@@ -329,7 +342,7 @@ python legacy_script.py cbx.csv hc.xlsx output.xlsx [options]
 
 **Key features:**
 - 28 CBX columns, 41 HC columns
-- 12 output sheets by action
+- 15 output sheets by action
 - Configurable matching ratios
 - Generic domain filtering
 - Previous name matching

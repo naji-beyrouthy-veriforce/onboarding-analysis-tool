@@ -1,6 +1,6 @@
 # 🔧 Troubleshooting Guide
 
-Common issues and solutions for the Onboarding Analysis Tool v2.0.
+Common issues and solutions for the Onboarding Analysis Tool.
 
 ## 🚨 Backend Issues
 

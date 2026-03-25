@@ -8,7 +8,7 @@ The launcher will automatically check for these requirements:
 
 - **Node.js** (Latest LTS version recommended)
 - **npm** (comes with Node.js)
-- **Python 3.9+**
+- **Python 3.8+**
 - **pip** (comes with Python)
 - **venv module** (usually included with Python)
 

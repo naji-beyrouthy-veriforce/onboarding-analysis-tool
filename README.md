@@ -23,7 +23,7 @@ The **Onboarding Analysis Tool** is a web application for matching contractor re
 - Background job processing with async status polling
 
 ### 📊 **Comprehensive Reports**
-- Excel output with **14 categorized sheets**
+- Excel output with **15 categorized sheets**
 - Action-based filtering (onboarding, re-onboarding, follow-up, etc.)
 - Match ratio scores (company, address) per row
 - Subscription upgrade calculations
@@ -155,24 +155,25 @@ cd backend && ./restart.sh     # Restart backend
 
 ### Step 4: Analyze Results
 
-**Output Excel Sheets (14 total):**
+**Output Excel Sheets (15 total):**
 
 | # | Sheet | Description |
 |---|-------|-------------|
 | 1 | **all** | Complete dataset — all matches and analysis |
 | 2 | **onboarding** | New contractors requiring onboarding |
-| 3 | **re_onboarding** | Inactive contractors to reactivate |
-| 4 | **add_questionnaire** | Active contractors needing questionnaires |
-| 5 | **already_qualified** | Contractors already validated |
-| 6 | **follow_up_qualification** | Contractors requiring follow-up |
-| 7 | **activation_link** | Contractors needing activation |
-| 8 | **ambiguous_onboarding** | Ambiguous matches requiring manual review |
-| 9 | **association_fee** | Contractors requiring association fees |
-| 10 | **subscription_upgrade** | Contractors requiring plan upgrades |
-| 11 | **restore_suspended** | Suspended accounts to restore |
-| 12 | **missing_info** | Incomplete submissions |
-| 13 | **do_not_match** | Rows flagged to skip matching |
-| 14 | **force_cbx_id** | Rows with a forced CBX ID override |
+| 3 | **association_fee** | Contractors requiring association fees |
+| 4 | **re_onboarding** | Inactive contractors to reactivate |
+| 5 | **subscription_upgrade** | Contractors requiring plan upgrades |
+| 6 | **ambiguous_onboarding** | Ambiguous matches requiring manual review |
+| 7 | **restore_suspended** | Suspended accounts to restore |
+| 8 | **activation_link** | Contractors needing activation |
+| 9 | **already_qualified** | Contractors already validated |
+| 10 | **add_questionnaire** | Active contractors needing questionnaires |
+| 11 | **missing_info** | Incomplete submissions |
+| 12 | **follow_up_qualification** | Contractors requiring follow-up |
+| 13 | **Data to import** | Data formatted for import into CBX |
+| 14 | **Existing Contractors** | Matched existing contractor data |
+| 15 | **Data for HS** | Data formatted for HubSpot |
 
 **Key Columns in Output:**
 - `cbx_id` — Matched Cognibox ID (blank if new)
@@ -239,14 +240,13 @@ The `action` field is derived by a decision tree based on `create_in_cbx`, `is_t
 
 ```
 backend/
-├── main.py                 # Main FastAPI app — all matching logic (~1100 lines)
+├── main.py                 # Main FastAPI app — all matching logic (~1044 lines)
 ├── convertTimeZone.py      # Timezone conversion utilities
 ├── requirements.txt        # Python dependencies
 ├── uploads/                # Temporary upload storage (auto-cleaned)
 ├── outputs/                # Generated Excel files
 ├── data/                   # Current job data files
-├── testdata/               # Sample CBX and HC files for testing
-└── legacy/                 # Legacy script versions (reference only)
+└── testdata/               # Sample CBX and HC files for testing
 ```
 
 **Key Dependencies:**
@@ -260,7 +260,7 @@ backend/
 ```
 frontend/
 ├── src/
-│   ├── App.jsx             # Main React component (~830 lines)
+│   ├── App.jsx             # Main React component (~768 lines)
 │   ├── main.jsx            # React entry point
 │   └── index.css           # Tailwind + custom styles
 ├── index.html
@@ -284,6 +284,7 @@ frontend/
 | `GET` | `/api/jobs/{job_id}/download` | Download completed Excel results |
 | `GET` | `/api/jobs` | List all jobs |
 | `GET` | `/api/health` | Health check |
+| `GET` | `/` | Service info and version |
 
 ## 📊 Performance
 
