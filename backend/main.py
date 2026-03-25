@@ -269,7 +269,7 @@ def clean_company_name(name: Optional[str]) -> str:
     if not name or (isinstance(name, str) and not name.strip()):
         return ''
     try:
-        name = str(name).lower().replace('.', '').replace(',', '').strip()
+        name = str(name).lower().replace('.', '').replace(',', '').replace('-', '').strip()
         name = re.sub(r"\([^()]*\)", "", name)
         name = remove_generics(name)
         # Remove multiple spaces
@@ -278,6 +278,21 @@ def clean_company_name(name: Optional[str]) -> str:
     except (TypeError, AttributeError) as e:
         logger.warning(f"Error cleaning company name '{name}': {e}")
         return ''
+
+def extract_parenthesized_name(name: Optional[str]) -> str:
+    """Extract content inside parentheses from a company name, cleaned for matching.
+    Returns the cleaned parenthesized content, or empty string if none found."""
+    if not name:
+        return ''
+    match = re.search(r"\(([^()]+)\)", str(name))
+    if not match:
+        return ''
+    inner = match.group(1).strip()
+    # Clean the extracted name the same way (minus parenthesis removal since it's already extracted)
+    inner = inner.lower().replace('.', '').replace(',', '').replace('-', '').strip()
+    inner = remove_generics(inner)
+    inner = re.sub(r'\s+', ' ', inner).strip()
+    return inner
 
 def parse_assessment_level(level: Union[str, int, None]) -> int:
     """Parse assessment level from various formats to integer."""
@@ -625,6 +640,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             matches = []
             hc_company = hc_row[HC_COMPANY]
             clean_hc_company = clean_company_name(hc_company)
+            alt_hc_company = extract_parenthesized_name(hc_company)
             
             # Normalize email - optimized single-pass extraction
             hc_email_raw = str(hc_row[HC_EMAIL]).lower().strip()
@@ -725,6 +741,14 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                             ratio_company_en = fuzz.token_sort_ratio(cbx_company_en, clean_hc_company)
                             ratio_company = ratio_company_fr if ratio_company_fr > ratio_company_en else ratio_company_en
 
+                            # Check parenthesized alternative name (e.g. "1670747 Ontario (Mastrangelo Fuels)")
+                            if alt_hc_company and len(alt_hc_company) >= 3:
+                                alt_ratio_fr = fuzz.token_sort_ratio(cbx_company_fr, alt_hc_company)
+                                alt_ratio_en = fuzz.token_sort_ratio(cbx_company_en, alt_hc_company)
+                                alt_ratio = alt_ratio_fr if alt_ratio_fr > alt_ratio_en else alt_ratio_en
+                                if alt_ratio > ratio_company:
+                                    ratio_company = alt_ratio
+
                             # Check previous names using pre-cleaned list
                             ratio_previous = 0
                             for item_clean in cleaned_prev_names:
@@ -763,6 +787,11 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                         elif ratio_company >= min_company_ratio and ratio_address >= min_address_ratio:
                             # PRIMARY: Strong dual signal - both company (≥75%) AND address (≥85%) meet thresholds
                             # Combined signals provide higher confidence than single strong signal
+                            matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
+                        elif ratio_address >= 90.0 and ratio_company >= 60.0:
+                            # High address match (≥90%) compensates for lower company ratio (≥60%)
+                            # Catches cases where company name has extra words diluting the score
+                            # (e.g. "Tbaytel" vs "Tbaytel Mobility" = 61% company but 91% address)
                             matches.append(add_analysis_data(hc_row, cbx_row, ratio_company, ratio_address, contact_match))
                         elif ratio_address == RATIO_ADDRESS_PERFECT and ratio_company >= RATIO_COMPANY_MODERATE:
                             # Perfect address match + reasonable company similarity

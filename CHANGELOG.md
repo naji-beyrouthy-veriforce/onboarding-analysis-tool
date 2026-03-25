@@ -2,6 +2,29 @@
 
 All notable changes to the Onboarding Analysis Tool.
 
+## [2.1.3] - 2026-03-25
+
+### ✨ Matching Improvements
+
+#### 1. Parenthesized Name Extraction
+- **Companies registered as numbered entities** with trade names in parentheses (e.g. "1670747 Ontario Inc. (Mastrangelo Fuels)") now match properly
+- Previously, parenthesized content was stripped before comparison, leaving only the numbered portion which scored poorly
+- Now extracts the parenthesized name as an alternative and compares against both, using the higher ratio
+- **Example**: `1670747 ONTARIO INC. (Mastrangelo Fuels)` → CBX `Mastrangelo Fuels` now scores CR=100% (was 25%)
+
+#### 2. High-Address Compensates Low-Company Condition
+- Added new matching condition: **address ratio ≥ 90% + company ratio ≥ 60%**
+- Catches cases where one company name is a subset of the other (e.g. "Tbaytel" vs "Tbaytel Mobility") diluting the company score below the standard 75% threshold, but address strongly confirms it's the same entity
+- Positioned after Condition 2 (CR≥75 + AR≥85) and before Condition 3 (AR=100 + CR≥70) in the priority chain
+
+#### 3. Hyphen Removal in Company Name Cleaning
+- Hyphens are now stripped during company name normalization (alongside periods and commas)
+- **Example**: `CHEM-A-QUA` vs `CHEMAQUA` now scores CR=100% (was 88.9%)
+- Applied consistently to both HC and pre-normalized CBX company names
+
+- **Files Modified**: `backend/main.py`
+- **Test Results**: 63 → 64 matches (+1 new: Mastrangelo Fuels), 0 regressions
+
 ## [2.1.2] - 2026-03-25
 
 ### 🐛 Bug Fix
