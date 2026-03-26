@@ -16,7 +16,6 @@ from openpyxl.styles import Alignment
 from rapidfuzz import fuzz
 from datetime import datetime, timedelta
 import uuid
-import shutil
 from pathlib import Path
 import logging
 import asyncio
@@ -78,6 +77,15 @@ def _is_supported_upload(path: Path) -> bool:
 # Subscription pricing constants
 CBX_DEFAULT_STANDARD_SUBSCRIPTION = 803
 CBX_HEADER_LENGTH = 28
+
+# Named indexes for pre-computed CBX normalizations (appended during pre-normalization step)
+CBX_NORM_EN     = CBX_HEADER_LENGTH      # normalized EN company name
+CBX_NORM_FR     = CBX_HEADER_LENGTH + 1  # normalized FR company name
+CBX_NORM_ADDR   = CBX_HEADER_LENGTH + 2  # normalized address
+CBX_NORM_EMAIL  = CBX_HEADER_LENGTH + 3  # normalized email (lowercase)
+CBX_NORM_DOMAIN = CBX_HEADER_LENGTH + 4  # email domain
+CBX_NORM_ZIP    = CBX_HEADER_LENGTH + 5  # normalized ZIP (no spaces, uppercase)
+CBX_NORM_PREV   = CBX_HEADER_LENGTH + 6  # cleaned previous names list
 
 # Fuzzy matching thresholds - Named constants for clarity and maintainability
 RATIO_COMPANY_PERFECT = 100.0
@@ -163,14 +171,12 @@ hubspot_headers = ['contractor_name', 'contact_first_name', 'contact_last_name',
                    'postal_code', 'cbx_id', 'cbx_expiration_date', 'questionnaire_name',
                    'questionnaire_id', 'hiring_client_name', 'hiring_client_id', 'action']
 
-metadata_headers = ['metadata_x', 'metadata_y', 'metadata_z', '...']
-
 BASE_GENERIC_DOMAIN = ['yahoo.ca', 'yahoo.com', 'hotmail.com', 'gmail.com', 'outlook.com',
                        'bell.com', 'bell.ca', 'videotron.ca', 'eastlink.ca', 'kos.net', 'bellnet.ca', 'sasktel.net',
                        'aol.com', 'tlb.sympatico.ca', 'sogetel.net', 'cgocable.ca',
-                       'hotmail.ca', 'live.ca', 'icloud.com', 'hotmail.fr', 'yahoo.com', 'outlook.fr', 'msn.com',
+                       'hotmail.ca', 'live.ca', 'icloud.com', 'hotmail.fr', 'outlook.fr', 'msn.com',
                        'globetrotter.net', 'live.com', 'sympatico.ca', 'live.fr', 'yahoo.fr', 'telus.net',
-                       'shaw.ca', 'me.com', 'bell.net', 'cablevision.qc.ca', 'live.ca', 'tlb.sympatico.ca',
+                       'shaw.ca', 'me.com', 'bell.net', 'cablevision.qc.ca',
                        '', 'videotron.qc.ca', 'ivic.qc.ca', 'qc.aira.com', 'canada.ca', 'axion.ca', 'bellsouth.net',
                        'telusplanet.net', 'rogers.com', 'mymts.net', 'nb.aibn.com', 'on.aibn.com', 'live.be',
                        'nbnet.nb.ca', 'execulink.com', 'bellaliant.com', 'nf.aibn.com', 'clintar.com', 'pathcom.com',
@@ -489,22 +495,30 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
         logger.info(f"[{job_id}] Pre-normalizing {len(cbx_data)} CBX records for faster matching...")
         for idx, cbx_row in enumerate(cbx_data):
             try:
-                cbx_row.append(clean_company_name(cbx_row[CBX_COMPANY_EN]))  # Index 28: normalized EN name
-                cbx_row.append(clean_company_name(cbx_row[CBX_COMPANY_FR]))  # Index 29: normalized FR name
-                cbx_row.append(str(cbx_row[CBX_ADDRESS] if cbx_row[CBX_ADDRESS] else '').lower().replace('.', '').strip())  # Index 30: normalized address
+                cbx_row.append(clean_company_name(cbx_row[CBX_COMPANY_EN]))  # CBX_NORM_EN: normalized EN name
+                cbx_row.append(clean_company_name(cbx_row[CBX_COMPANY_FR]))  # CBX_NORM_FR: normalized FR name
+                cbx_row.append(str(cbx_row[CBX_ADDRESS] if cbx_row[CBX_ADDRESS] else '').lower().replace('.', '').strip())  # CBX_NORM_ADDR: normalized address
                 # Pre-normalize email and domain for faster comparison
                 cbx_email_lower = str(cbx_row[CBX_EMAIL]).lower()
-                cbx_row.append(cbx_email_lower)  # Index 31: normalized email
-                cbx_row.append(cbx_email_lower[cbx_email_lower.find('@') + 1:] if '@' in cbx_email_lower else '')  # Index 32: email domain
-                cbx_row.append(str(cbx_row[CBX_ZIP] if cbx_row[CBX_ZIP] else '').replace(' ', '').upper())  # Index 33: normalized ZIP
+                cbx_row.append(cbx_email_lower)  # CBX_NORM_EMAIL: normalized email
+                cbx_row.append(cbx_email_lower[cbx_email_lower.find('@') + 1:] if '@' in cbx_email_lower else '')  # CBX_NORM_DOMAIN: email domain
+                cbx_row.append(str(cbx_row[CBX_ZIP] if cbx_row[CBX_ZIP] else '').replace(' ', '').upper())  # CBX_NORM_ZIP: normalized ZIP
                 # Pre-clean previous names for faster comparison
                 prev_names = str(cbx_row[CBX_COMPANY_OLD]).split(LIST_SEPARATOR)
                 cleaned_prev = [clean_company_name(item) for item in prev_names if item and item not in (cbx_row[CBX_COMPANY_EN], cbx_row[CBX_COMPANY_FR])]
-                cbx_row.append([n for n in cleaned_prev if n])  # Index 34: cleaned previous names list
+                cbx_row.append([n for n in cleaned_prev if n])  # CBX_NORM_PREV: cleaned previous names list
             except IndexError as e:
                 logger.error(f"[{job_id}] CBX row {idx+2} missing columns. Expected 28, got {len(cbx_row)}. Error: {e}")
                 raise ValueError(f"CBX file format error at row {idx+2}: Missing required columns. Expected 28 columns, found {len(cbx_row)}.")
         logger.info(f"[{job_id}] Pre-normalization complete")
+
+        # Build country lookup index — avoids iterating all CBX rows for each HC row
+        cbx_by_country: dict = {}
+        for cbx_row in cbx_data:
+            key = str(cbx_row[CBX_COUNTRY]).strip().upper() if cbx_row[CBX_COUNTRY] else ''
+            cbx_by_country.setdefault(key, []).append(cbx_row)
+        cbx_no_country = cbx_by_country.get('', [])
+        logger.info(f"[{job_id}] Country buckets: { {k: len(v) for k, v in cbx_by_country.items()} }")
 
         # Read HC data
         logger.info(f"[{job_id}] Reading HC file: {hc_path}")
@@ -697,20 +711,23 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                     if hc_country_raw and hc_country != str(hc_country_raw).strip().upper() and index < 5:
                         logger.info(f"[{job_id}] Country normalized: '{hc_country_raw}' → '{hc_country}' (row {index+2})")
                     
-                    for cbx_row in cbx_data:
-                        # EARLY EXIT: Skip entirely if countries don't match (fastest check)
-                        # Only compare countries if BOTH are non-empty (case-insensitive comparison)
-                        if hc_country and cbx_row[CBX_COUNTRY] and str(cbx_row[CBX_COUNTRY]).strip().upper() != str(hc_country).strip().upper():
-                            continue
-                        
-                        # Use pre-normalized data (indexes 28-34)
-                        cbx_company_en = cbx_row[28] if len(cbx_row) > 28 else clean_company_name(cbx_row[CBX_COMPANY_EN])
-                        cbx_company_fr = cbx_row[29] if len(cbx_row) > 29 else clean_company_name(cbx_row[CBX_COMPANY_FR])
-                        cbx_address = cbx_row[30] if len(cbx_row) > 30 else str(cbx_row[CBX_ADDRESS] if cbx_row[CBX_ADDRESS] else '').lower().replace('.', '').strip()
-                        cbx_email = cbx_row[31] if len(cbx_row) > 31 else str(cbx_row[CBX_EMAIL]).lower()
-                        cbx_domain = cbx_row[32] if len(cbx_row) > 32 else (cbx_email[cbx_email.find('@') + 1:] if '@' in cbx_email else '')
-                        cbx_zip = cbx_row[33] if len(cbx_row) > 33 else str(cbx_row[CBX_ZIP] if cbx_row[CBX_ZIP] else '').replace(' ', '').upper()
-                        cleaned_prev_names = cbx_row[34] if len(cbx_row) > 34 else []
+                    # Select only CBX rows with matching country (or no country on either side)
+                    if hc_country:
+                        cbx_candidates = cbx_by_country.get(hc_country, [])
+                        if cbx_no_country:
+                            cbx_candidates = cbx_candidates + cbx_no_country
+                    else:
+                        cbx_candidates = cbx_data
+
+                    for cbx_row in cbx_candidates:
+                        # Use pre-normalized data
+                        cbx_company_en = cbx_row[CBX_NORM_EN] if len(cbx_row) > CBX_NORM_EN else clean_company_name(cbx_row[CBX_COMPANY_EN])
+                        cbx_company_fr = cbx_row[CBX_NORM_FR] if len(cbx_row) > CBX_NORM_FR else clean_company_name(cbx_row[CBX_COMPANY_FR])
+                        cbx_address = cbx_row[CBX_NORM_ADDR] if len(cbx_row) > CBX_NORM_ADDR else str(cbx_row[CBX_ADDRESS] if cbx_row[CBX_ADDRESS] else '').lower().replace('.', '').strip()
+                        cbx_email = cbx_row[CBX_NORM_EMAIL] if len(cbx_row) > CBX_NORM_EMAIL else str(cbx_row[CBX_EMAIL]).lower()
+                        cbx_domain = cbx_row[CBX_NORM_DOMAIN] if len(cbx_row) > CBX_NORM_DOMAIN else (cbx_email[cbx_email.find('@') + 1:] if '@' in cbx_email else '')
+                        cbx_zip = cbx_row[CBX_NORM_ZIP] if len(cbx_row) > CBX_NORM_ZIP else str(cbx_row[CBX_ZIP] if cbx_row[CBX_ZIP] else '').replace(' ', '').upper()
+                        cleaned_prev_names = cbx_row[CBX_NORM_PREV] if len(cbx_row) > CBX_NORM_PREV else []
 
                         # Contact match calculation
                         if hc_email:
@@ -721,43 +738,56 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
                         else:
                             contact_match = False
 
-                        # Address ratio calculation - only check country if BOTH have countries (case-insensitive)
-                        if hc_country and cbx_row[CBX_COUNTRY] and str(cbx_row[CBX_COUNTRY]).strip().upper() != str(hc_country).strip().upper():
-                            ratio_zip = ratio_address = 0.0
-                        elif not hc_address or not cbx_address:
+                        # Company ratio calculation — done before address so we can skip address work
+                        # for the vast majority of pairs that have no company similarity.
+                        # score_cutoff=RATIO_COMPANY_MINIMAL lets rapidfuzz short-circuit in C for
+                        # clearly non-matching names (returns 0 instead of the actual low score).
+                        _cutoff = int(RATIO_COMPANY_MINIMAL)
+                        if len(clean_hc_company) < 3 or (len(cbx_company_en) < 3 and len(cbx_company_fr) < 3):
+                            ratio_company = 0
+                        else:
+                            ratio_company_en = fuzz.token_sort_ratio(cbx_company_en, clean_hc_company, score_cutoff=_cutoff)
+                            if ratio_company_en == RATIO_COMPANY_PERFECT:
+                                ratio_company = RATIO_COMPANY_PERFECT
+                            else:
+                                ratio_company_fr = fuzz.token_sort_ratio(cbx_company_fr, clean_hc_company, score_cutoff=_cutoff)
+                                ratio_company = ratio_company_fr if ratio_company_fr > ratio_company_en else ratio_company_en
+
+                                if ratio_company < RATIO_COMPANY_PERFECT:
+                                    # Check parenthesized alternative name (e.g. "1670747 Ontario (Mastrangelo Fuels)")
+                                    if alt_hc_company and len(alt_hc_company) >= 3:
+                                        alt_ratio_en = fuzz.token_sort_ratio(cbx_company_en, alt_hc_company, score_cutoff=_cutoff)
+                                        if alt_ratio_en == RATIO_COMPANY_PERFECT:
+                                            ratio_company = RATIO_COMPANY_PERFECT
+                                        else:
+                                            alt_ratio_fr = fuzz.token_sort_ratio(cbx_company_fr, alt_hc_company, score_cutoff=_cutoff)
+                                            alt_ratio = alt_ratio_fr if alt_ratio_fr > alt_ratio_en else alt_ratio_en
+                                            if alt_ratio > ratio_company:
+                                                ratio_company = alt_ratio
+
+                                if ratio_company < RATIO_COMPANY_PERFECT:
+                                    # Check previous names using pre-cleaned list
+                                    for item_clean in cleaned_prev_names:
+                                        r = fuzz.token_sort_ratio(item_clean, clean_hc_company, score_cutoff=_cutoff)
+                                        if r > ratio_company:
+                                            ratio_company = r
+                                        if ratio_company == RATIO_COMPANY_PERFECT:
+                                            break
+
+                        # Fast skip: no company signal and no email/domain match
+                        # → skip expensive address computation and condition evaluation
+                        if ratio_company == 0 and not contact_match:
+                            continue
+
+                        # Address ratio calculation
+                        if not hc_address or not cbx_address:
                             ratio_zip = ratio_address = 0.0
                         else:
-                            ratio_zip = fuzz.ratio(cbx_zip, hc_zip)
+                            ratio_zip = 100.0 if cbx_zip == hc_zip else fuzz.ratio(cbx_zip, hc_zip)
                             ratio_address = fuzz.token_sort_ratio(cbx_address, hc_address)
                             # Legacy combination logic (EXACT)
                             ratio_address = ratio_address if ratio_zip == 0 else ratio_zip if ratio_address == 0 \
                                 else ratio_address * ratio_zip / 100
-
-                        # OPTIMIZATION: Skip fuzzy matching for very short/empty company names
-                        if len(clean_hc_company) < 3 or (len(cbx_company_en) < 3 and len(cbx_company_fr) < 3):
-                            ratio_company = 0
-                        else:
-                            ratio_company_fr = fuzz.token_sort_ratio(cbx_company_fr, clean_hc_company)
-                            ratio_company_en = fuzz.token_sort_ratio(cbx_company_en, clean_hc_company)
-                            ratio_company = ratio_company_fr if ratio_company_fr > ratio_company_en else ratio_company_en
-
-                            # Check parenthesized alternative name (e.g. "1670747 Ontario (Mastrangelo Fuels)")
-                            if alt_hc_company and len(alt_hc_company) >= 3:
-                                alt_ratio_fr = fuzz.token_sort_ratio(cbx_company_fr, alt_hc_company)
-                                alt_ratio_en = fuzz.token_sort_ratio(cbx_company_en, alt_hc_company)
-                                alt_ratio = alt_ratio_fr if alt_ratio_fr > alt_ratio_en else alt_ratio_en
-                                if alt_ratio > ratio_company:
-                                    ratio_company = alt_ratio
-
-                            # Check previous names using pre-cleaned list
-                            ratio_previous = 0
-                            for item_clean in cleaned_prev_names:
-                                r = fuzz.token_sort_ratio(item_clean, clean_hc_company)
-                                if r > ratio_previous:
-                                    ratio_previous = r
-
-                            if ratio_previous > ratio_company:
-                                ratio_company = ratio_previous
 
                         # ============================================================================
                         # MATCHING CONDITIONS (Priority Ordered - Mutually Exclusive)
@@ -837,11 +867,7 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             # CBX entries with empty hiring_client_names ('' == '' is always True)
             hc_name = str(hc_row[HC_HIRING_CLIENT_NAME]).strip().lower()
             if hc_name:
-                def has_hc_name(m):
-                    names = str(m.get('hiring_client_names', '')).lower().split(';')
-                    return any(hc_name == n.strip() for n in names)
-
-                hc_matches = [m for m in matches if has_hc_name(m)]
+                hc_matches = [m for m in matches if any(hc_name == n.strip() for n in str(m.get('hiring_client_names', '')).lower().split(';'))]
             else:
                 hc_matches = []
 
@@ -871,15 +897,16 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
             if active_matches:
                 # Keep active matches but also include suspended/non-member high-confidence matches
                 # This ensures all potential duplicate accounts are visible
+                active_ids = {am.get('cbx_id') for am in active_matches}
                 if not has_any_address:
                     # No address data: use 80% threshold to catch duplicates
-                    very_high_confidence = [m for m in matches if (m.get('ratio_company') or 0) >= 80 and 
-                                            m.get('cbx_id') not in [am.get('cbx_id') for am in active_matches]]
+                    very_high_confidence = [m for m in matches if (m.get('ratio_company') or 0) >= 80 and
+                                            m.get('cbx_id') not in active_ids]
                 else:
                     # Have address data: use very strict 98% threshold
-                    very_high_confidence = [m for m in matches if (m.get('ratio_company') or 0) >= 98 and 
-                                            m.get('cbx_id') not in [am.get('cbx_id') for am in active_matches]]
-                
+                    very_high_confidence = [m for m in matches if (m.get('ratio_company') or 0) >= 98 and
+                                            m.get('cbx_id') not in active_ids]
+
                 matches = active_matches + very_high_confidence
 
             # Sort prioritizing company name first (more stable identifier than address)
@@ -1046,9 +1073,11 @@ def process_matching_job(job_id: str, cbx_path: Path, hc_path: Path, min_company
         
         table_counter = 1
         for sheet in sheets:
-            # Auto-size columns based on content
+            # Auto-size columns based on content (sample first 200 rows for performance)
             dims = {}
-            for row in sheet.rows:
+            for row_idx, row in enumerate(sheet.rows):
+                if row_idx >= 200:
+                    break
                 for cell in row:
                     if cell.value:
                         dims[cell.column_letter] = max((dims.get(cell.column_letter, 0), len(str(cell.value))))
@@ -1127,6 +1156,28 @@ class JobStatus(BaseModel):
     created_at: str
 
 
+async def _save_upload_enforcing_limit(upload: UploadFile, dest: Path) -> None:
+    """Stream-save an uploaded file, raising HTTP 413 if MAX_FILE_SIZE is exceeded."""
+    written = 0
+    try:
+        with open(dest, "wb") as f:
+            while True:
+                chunk = await upload.read(65536)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File exceeds the {MAX_FILE_SIZE // (1024 * 1024)} MB limit."
+                    )
+                f.write(chunk)
+    except HTTPException:
+        if dest.exists():
+            dest.unlink()
+        raise
+
+
 # ============================================================================
 # API ENDPOINTS
 # ============================================================================
@@ -1160,11 +1211,18 @@ async def match(
         cbx_path = UPLOAD_DIR / f"{job_id}_cbx{cbx_ext}"
         hc_path = UPLOAD_DIR / f"{job_id}_hc{hc_ext}"
 
-        # Save files
-        with open(cbx_path, "wb") as f:
-            shutil.copyfileobj(cbx_file.file, f)
-        with open(hc_path, "wb") as f:
-            shutil.copyfileobj(hc_file.file, f)
+        # Save files (streaming with 100 MB size enforcement)
+        try:
+            await _save_upload_enforcing_limit(cbx_file, cbx_path)
+            await _save_upload_enforcing_limit(hc_file, hc_path)
+        except HTTPException:
+            for p in (cbx_path, hc_path):
+                try:
+                    if p.exists():
+                        p.unlink()
+                except Exception:
+                    pass
+            raise
 
         # Close upload streams early to free resources.
         try:
