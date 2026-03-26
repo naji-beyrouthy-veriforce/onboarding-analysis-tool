@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Upload,
   FileText,
@@ -14,10 +14,13 @@ import {
   BarChart3
 } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 function App() {
   const terminalRef = useRef(null);
+  const startTimeRef = useRef(null);
+  const pollTimeoutRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // Simple file states - NO pre-upload
   const [cbxFile, setCbxFile] = useState(null);
@@ -52,20 +55,19 @@ function App() {
   useEffect(() => {
     const savedHistory = JSON.parse(localStorage.getItem('jobHistory') || '[]');
     setJobHistory(savedHistory);
-    updateStats();
+    updateStats(savedHistory);
   }, []);
 
-  const updateStats = () => {
-    const savedHistory = JSON.parse(localStorage.getItem('jobHistory') || '[]');
-    const successful = savedHistory.filter(j => j.status === 'completed').length;
-    const failed = savedHistory.filter(j => j.status === 'failed').length;
+  const updateStats = (history) => {
+    const successful = history.filter(j => j.status === 'completed').length;
+    const failed = history.filter(j => j.status === 'failed').length;
     const avgTime =
-      savedHistory
+      history
         .filter(j => j.processingTime)
         .reduce((sum, j) => sum + j.processingTime, 0) / (successful || 1);
 
     setStats({
-      totalJobs: savedHistory.length,
+      totalJobs: history.length,
       successfulJobs: successful,
       failedJobs: failed,
       totalRecordsProcessed: 0,
@@ -90,7 +92,7 @@ function App() {
     const newHistory = [job, ...savedHistory].slice(0, 50);
     localStorage.setItem('jobHistory', JSON.stringify(newHistory));
     setJobHistory(newHistory);
-    updateStats();
+    updateStats(newHistory);
   };
 
   useEffect(() => {
@@ -132,15 +134,17 @@ function App() {
 
   const pollJobStatus = useCallback(
     async id => {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
       try {
-        const response = await fetch(`${API_URL}/api/jobs/${id}`);
+        const response = await fetch(`${API_URL}/api/jobs/${id}`, { signal: controller.signal });
         if (!response.ok) throw new Error('Failed to fetch status');
 
         const data = await response.json();
         setJobStatus(data);
 
         if (data.status === 'processing') {
-          setTimeout(() => pollJobStatus(id), 1000);
+          pollTimeoutRef.current = setTimeout(() => pollJobStatus(id), 1000);
         } else if (data.status === 'completed') {
           setLoading(false);
           addLog('Job completed!', 'success');
@@ -150,7 +154,7 @@ function App() {
             cbxFile: cbxFile?.name,
             hcFile: hcFile?.name,
             timestamp: new Date().toISOString(),
-            processingTime: elapsedTime,
+            processingTime: startTimeRef.current ? Math.floor((Date.now() - startTimeRef.current) / 1000) : 0,
             resultFile: data.result_file
           });
         } else if (data.status === 'failed') {
@@ -163,17 +167,18 @@ function App() {
             cbxFile: cbxFile?.name,
             hcFile: hcFile?.name,
             timestamp: new Date().toISOString(),
-            processingTime: elapsedTime,
+            processingTime: startTimeRef.current ? Math.floor((Date.now() - startTimeRef.current) / 1000) : 0,
             error: data.error
           });
         }
       } catch (err) {
+        if (err.name === 'AbortError') return;
         setError(err.message);
         setLoading(false);
         addLog(`Error: ${err.message}`, 'error');
       }
     },
-    [elapsedTime, cbxFile, hcFile]
+    [cbxFile, hcFile]
   );
 
   // ONE upload when starting job
@@ -189,7 +194,9 @@ function App() {
     setError(null);
     setLoading(true);
     setElapsedTime(0);
-    setStartTime(Date.now());
+    const now = Date.now();
+    setStartTime(now);
+    startTimeRef.current = now;
     setJobStatus({
       job_id: 'uploading',
       status: 'processing',
@@ -259,6 +266,15 @@ function App() {
   };
 
   const handleReset = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+    startTimeRef.current = null;
     setCbxFile(null);
     setHcFile(null);
     setJobId(null);
@@ -271,7 +287,7 @@ function App() {
   };
 
   // show newest logs at the bottom
-  const orderedLogs = [...logs].reverse().slice(0, 200);
+  const orderedLogs = useMemo(() => [...logs].reverse().slice(0, 200), [logs]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
